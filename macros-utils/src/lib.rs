@@ -1,31 +1,42 @@
 mod error;
 mod parsers;
+mod tokens;
 
 use std::collections::VecDeque;
 
 pub use error::{MacrosError, MacrosErrorKind};
-use proc_macro2::{TokenStream, TokenTree};
+use proc_macro2::TokenStream;
+pub use tokens::Token;
 
 #[derive(Debug)]
-struct MacroStream {
-    stream: VecDeque<TokenTree>,
+pub struct MacroStream {
+    stream: VecDeque<Token>,
 }
 
 impl MacroStream {
-    fn new(stream: TokenStream) -> Self {
-        let mut vec = VecDeque::new();
+    pub fn new(stream: TokenStream) -> Self {
+        let mut tokens = VecDeque::new();
         for i in stream.into_iter() {
-            vec.push_back(i);
+            tokens.push_back(i);
         }
-        Self { stream: vec }
+        let mut stream = VecDeque::new();
+        while !tokens.is_empty() {
+            stream.push_back(Token::from_tokens(&mut tokens));
+        }
+        Self { stream }
     }
 
-    fn next(&mut self) -> Option<TokenTree> {
-        let t = self.stream.pop_front();
-        t
+    pub fn pop(&mut self) -> Option<Token> {
+        self.stream.pop_front()
     }
 
-    fn peek(&self) -> Option<&TokenTree> {
+    pub fn peek(&self) -> Option<&Token> {
         self.stream.front()
+    }
+}
+
+impl From<TokenStream> for MacroStream {
+    fn from(stream: TokenStream) -> Self {
+        Self::new(stream)
     }
 }
