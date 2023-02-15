@@ -7,7 +7,7 @@ use crate::{
         get_byte_at, parse_lit_byte, parse_lit_byte_str, parse_lit_byte_str_raw, parse_lit_char,
         parse_lit_float, parse_lit_int, parse_lit_str, parse_lit_str_raw,
     },
-    MacroStream,
+    MacroStream, ParseError, ParseErrorKind, ParseResult,
 };
 
 /// The delimiter of a group of tokens
@@ -91,23 +91,23 @@ pub enum LiteralKind {
 }
 
 impl Token {
-    pub fn from_tokens(queue: &mut VecDeque<TokenTree>) -> Self {
+    pub fn from_tokens(queue: &mut VecDeque<TokenTree>) -> ParseResult<Self> {
         let token = queue.pop_front().unwrap();
-        match token {
+        Ok(match token {
             TokenTree::Ident(ident) => Self::Ident {
                 name: ident.to_string(),
                 span: ident.span(),
             },
             TokenTree::Group(group) => Self::Group {
                 delimiter: group.delimiter().into(),
-                stream: group.stream().into(),
+                stream: MacroStream::from_tokens(group.stream())?,
                 span: group.span(),
             },
             TokenTree::Literal(lit) => {
                 let literal = lit.to_string();
                 match get_byte_at(&literal, 0) {
                     b'"' => {
-                        let (value, suffix) = parse_lit_str(&literal);
+                        let (value, suffix) = parse_lit_str(&literal)?;
                         Self::Literal {
                             kind: LiteralKind::Str,
                             value,
@@ -116,7 +116,7 @@ impl Token {
                         }
                     },
                     b'r' => {
-                        let (value, suffix, hashtags) = parse_lit_str_raw(&literal);
+                        let (value, suffix, hashtags) = parse_lit_str_raw(&literal)?;
                         Self::Literal {
                             kind: LiteralKind::StrRaw(hashtags),
                             value,
@@ -126,7 +126,7 @@ impl Token {
                     },
                     b'b' => match get_byte_at(&literal, 1) {
                         b'"' => {
-                            let (value, suffix) = parse_lit_byte_str(&literal);
+                            let (value, suffix) = parse_lit_byte_str(&literal)?;
                             Self::Literal {
                                 kind: LiteralKind::ByteStr,
                                 value,
@@ -135,7 +135,7 @@ impl Token {
                             }
                         },
                         b'r' => {
-                            let (value, suffix, hashtags) = parse_lit_byte_str_raw(&literal);
+                            let (value, suffix, hashtags) = parse_lit_byte_str_raw(&literal)?;
                             Self::Literal {
                                 kind: LiteralKind::ByteStrRaw(hashtags),
                                 value,
@@ -144,7 +144,7 @@ impl Token {
                             }
                         },
                         b'\'' => {
-                            let (value, suffix) = parse_lit_byte(&literal);
+                            let (value, suffix) = parse_lit_byte(&literal)?;
                             Self::Literal {
                                 kind: LiteralKind::Byte,
                                 value,
@@ -153,11 +153,14 @@ impl Token {
                             }
                         },
                         _ => {
-                            panic!("unknown literal: {}", literal)
+                            return Err(ParseError::new(
+                                ParseErrorKind::UnknownLiteral(literal),
+                                lit.span(),
+                            ))
                         },
                     },
                     b'\'' => {
-                        let (value, suffix) = parse_lit_char(&literal);
+                        let (value, suffix) = parse_lit_char(&literal)?;
                         Self::Literal {
                             kind: LiteralKind::Char,
                             value,
@@ -166,7 +169,7 @@ impl Token {
                         }
                     },
                     b'0'..=b'9' | b'-' => {
-                        if let Some((value, suffix)) = parse_lit_float(&literal) {
+                        if let Some((value, suffix)) = parse_lit_float(&literal)? {
                             Self::Literal {
                                 kind: LiteralKind::Float,
                                 value,
@@ -174,7 +177,7 @@ impl Token {
                                 suffix,
                             }
                         } else {
-                            let (value, suffix) = parse_lit_int(&literal);
+                            let (value, suffix) = parse_lit_int(&literal)?;
                             Self::Literal {
                                 kind: LiteralKind::Integer,
                                 value,
@@ -184,7 +187,10 @@ impl Token {
                         }
                     },
                     _ => {
-                        panic!("unknown literal: {}", literal)
+                        return Err(ParseError::new(
+                            ParseErrorKind::UnknownLiteral(literal),
+                            lit.span(),
+                        ))
                     },
                 }
             },
@@ -220,7 +226,7 @@ impl Token {
                     span: span.unwrap_or_else(Span::call_site),
                 }
             },
-        }
+        })
     }
 
     pub fn ident(&self) -> Option<&str> {

@@ -7,7 +7,7 @@ name = "macros"
 version = "0.1.0"
 dependencies = [
  "macros-macros",
- "macros-utils",
+ "macros-parsers",
  "quote",
 ]
 
@@ -15,14 +15,14 @@ dependencies = [
 name = "macros-macros"
 version = "0.1.0"
 dependencies = [
- "macros-utils",
+ "macros-parsers",
  "proc-macro-error",
  "proc-macro2",
  "quote",
 ]
 
 [[package]]
-name = "macros-utils"
+name = "macros-parsers"
 version = "0.1.0"
 dependencies = [
  "proc-macro-error",

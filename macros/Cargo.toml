@@ -6,4 +6,4 @@ edition = "2021"
 [dependencies]
 quote = "1.0"
 macros-macros = { path = "../macros-macros" }
-macros-utils = { path = "../macros-utils" }
+macros-parsers = { path = "../macros-parsers" }

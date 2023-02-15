@@ -4,7 +4,7 @@ mod tokens;
 
 use std::collections::VecDeque;
 
-pub use error::{MacrosError, MacrosErrorKind};
+pub use error::{ParseError, ParseErrorKind};
 use proc_macro2::TokenStream;
 pub use tokens::Token;
 
@@ -13,17 +13,19 @@ pub struct MacroStream {
     stream: VecDeque<Token>,
 }
 
+pub type ParseResult<T> = std::result::Result<T, ParseError>;
+
 impl MacroStream {
-    pub fn new(stream: TokenStream) -> Self {
+    pub fn from_tokens(stream: TokenStream) -> ParseResult<Self> {
         let mut tokens = VecDeque::new();
         for i in stream.into_iter() {
             tokens.push_back(i);
         }
         let mut stream = VecDeque::new();
         while !tokens.is_empty() {
-            stream.push_back(Token::from_tokens(&mut tokens));
+            stream.push_back(Token::from_tokens(&mut tokens)?);
         }
-        Self { stream }
+        Ok(Self { stream })
     }
 
     pub fn pop(&mut self) -> Option<Token> {
@@ -32,11 +34,5 @@ impl MacroStream {
 
     pub fn peek(&self) -> Option<&Token> {
         self.stream.front()
-    }
-}
-
-impl From<TokenStream> for MacroStream {
-    fn from(stream: TokenStream) -> Self {
-        Self::new(stream)
     }
 }
