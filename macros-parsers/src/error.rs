@@ -26,11 +26,6 @@ impl ParseError {
             level: Level::Error,
         }
     }
-
-    pub(crate) fn warning(mut self) -> Self {
-        self.level = Level::Warning;
-        self
-    }
 }
 
 impl From<ParseError> for Diagnostic {
