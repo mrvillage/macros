@@ -158,7 +158,7 @@ pub fn parse_lit_int(mut s: &str) -> ParseResult<(String, String)> {
         let v = match byte {
             b'0'..=b'1' if base == 2 => byte - b'0',
             b'0'..=b'7' if base == 8 => byte - b'0',
-            b'0'..=b'9' if base > 10 => byte - b'0',
+            b'0'..=b'9' if base >= 10 => byte - b'0',
             b'a'..=b'f' if base > 10 => byte - b'a' + 10,
             b'A'..=b'F' if base > 10 => byte - b'A' + 10,
             b'_' => {

@@ -1,8 +1,10 @@
 [package]
-name = "macros-parsers"
+name = "macros-utils"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 proc-macro2 = "1.0"
 proc-macro-error = "1.0"
+quote = "1.0"
+thiserror = "1.0"

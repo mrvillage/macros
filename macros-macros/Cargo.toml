@@ -9,5 +9,5 @@ proc-macro = true
 [dependencies]
 quote = "1.0"
 proc-macro2 = "1.0"
-macros-parsers = { path = "../macros-parsers" }
+macros-utils = { path = "../macros-utils" }
 proc-macro-error = "1.0"

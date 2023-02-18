@@ -1,6 +1,11 @@
-use std::{collections::VecDeque, fmt::Debug, str::FromStr};
+use std::{
+    collections::VecDeque,
+    fmt::{Debug, Display, Formatter},
+    str::FromStr,
+};
 
-use proc_macro2::{Spacing, Span, TokenTree};
+use proc_macro2::{Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
+use quote::{quote, ToTokens, TokenStreamExt};
 
 use crate::{
     parsers::{
@@ -11,7 +16,7 @@ use crate::{
 };
 
 /// The delimiter of a group of tokens
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Delimiter {
     /// `( ... )`
     Parenthesis,
@@ -26,8 +31,29 @@ pub enum Delimiter {
     None,
 }
 
+impl Display for Delimiter {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Parenthesis => write!(f, "parenthesis"),
+            Self::Brace => write!(f, "braces"),
+            Self::Bracket => write!(f, "brackets"),
+            Self::None => write!(f, "none"),
+        }
+    }
+}
+
 impl From<Delimiter> for proc_macro2::Delimiter {
     fn from(delimiter: Delimiter) -> Self {
+        match delimiter {
+            Delimiter::Parenthesis => Self::Parenthesis,
+            Delimiter::Brace => Self::Brace,
+            Delimiter::Bracket => Self::Bracket,
+            Delimiter::None => Self::None,
+        }
+    }
+}
+impl From<&Delimiter> for proc_macro2::Delimiter {
+    fn from(delimiter: &Delimiter) -> Self {
         match delimiter {
             Delimiter::Parenthesis => Self::Parenthesis,
             Delimiter::Brace => Self::Brace,
@@ -47,8 +73,18 @@ impl From<proc_macro2::Delimiter> for Delimiter {
         }
     }
 }
+impl From<&proc_macro2::Delimiter> for Delimiter {
+    fn from(delimiter: &proc_macro2::Delimiter) -> Self {
+        match delimiter {
+            proc_macro2::Delimiter::Parenthesis => Self::Parenthesis,
+            proc_macro2::Delimiter::Brace => Self::Brace,
+            proc_macro2::Delimiter::Bracket => Self::Bracket,
+            proc_macro2::Delimiter::None => Self::None,
+        }
+    }
+}
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Token {
     Ident {
         name: String,
@@ -66,6 +102,7 @@ pub enum Token {
         value: String,
         span: Span,
         suffix: String,
+        token: Option<Literal>,
     },
 
     /// either a single character for something like `+`
@@ -76,7 +113,53 @@ pub enum Token {
     },
 }
 
-#[derive(Debug)]
+impl PartialEq for Token {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::Ident { name, .. },
+                Self::Ident {
+                    name: other_name, ..
+                },
+            ) => name == other_name,
+            (
+                Self::Group {
+                    delimiter, stream, ..
+                },
+                Self::Group {
+                    delimiter: other_delimiter,
+                    stream: other_stream,
+                    ..
+                },
+            ) => delimiter == other_delimiter && stream == other_stream,
+            (
+                Self::Literal {
+                    kind,
+                    value,
+                    suffix,
+                    ..
+                },
+                Self::Literal {
+                    kind: other_kind,
+                    value: other_value,
+                    suffix: other_suffix,
+                    ..
+                },
+            ) => kind == other_kind && value == other_value && suffix == other_suffix,
+            (
+                Self::Punctuation { value, .. },
+                Self::Punctuation {
+                    value: other_value, ..
+                },
+            ) => value == other_value,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Token {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LiteralKind {
     Byte,
     Char,
@@ -90,7 +173,65 @@ pub enum LiteralKind {
     ByteStrRaw(u8),
 }
 
+impl LiteralKind {
+    fn to_ident(&self) -> Token {
+        Token::Ident {
+            name: match self {
+                Self::Byte => "Byte",
+                Self::Char => "Char",
+                Self::Integer => "Integer",
+                Self::Float => "Float",
+                Self::Str => "String",
+                Self::StrRaw(_) => "StrRaw",
+                Self::ByteStr => "ByteStr",
+                Self::ByteStrRaw(_) => "ByteStrRaw",
+            }
+            .to_string(),
+            span: Span::call_site(),
+        }
+    }
+}
+
 impl Token {
+    pub fn to_token_stream(&self) -> TokenStream {
+        match self {
+            Self::Group { .. } => quote!(),
+            Self::Ident { name, .. } => {
+                quote! {
+                    macros_utils::Token::Ident {
+                        name: #name.to_string(),
+                        span: macros_utils::call_site(),
+                    }
+                }
+            },
+            Self::Literal {
+                kind,
+                suffix,
+                value,
+                ..
+            } => {
+                let kind = kind.to_ident();
+                quote! {
+                    macros_utils::Token::Literal {
+                        kind: macros_utils::LiteralKind::#kind,
+                        value: #value.to_string(),
+                        span: macros_utils::call_site(),
+                        suffix: #suffix.to_string(),
+                        token: None,
+                    }
+                }
+            },
+            Self::Punctuation { value, .. } => {
+                quote! {
+                    macros_utils::Token::Punctuation {
+                        value: #value.to_string(),
+                        span: macros_utils::call_site(),
+                    }
+                }
+            },
+        }
+    }
+
     pub fn from_tokens(queue: &mut VecDeque<TokenTree>) -> ParseResult<Self> {
         let token = queue.pop_front().unwrap();
         Ok(match token {
@@ -113,6 +254,7 @@ impl Token {
                             value,
                             span: lit.span(),
                             suffix,
+                            token: Some(lit),
                         }
                     },
                     b'r' => {
@@ -122,6 +264,7 @@ impl Token {
                             value,
                             span: lit.span(),
                             suffix,
+                            token: Some(lit),
                         }
                     },
                     b'b' => match get_byte_at(&literal, 1) {
@@ -132,6 +275,7 @@ impl Token {
                                 value,
                                 span: lit.span(),
                                 suffix,
+                                token: Some(lit),
                             }
                         },
                         b'r' => {
@@ -141,6 +285,7 @@ impl Token {
                                 value,
                                 span: lit.span(),
                                 suffix,
+                                token: Some(lit),
                             }
                         },
                         b'\'' => {
@@ -150,12 +295,13 @@ impl Token {
                                 value,
                                 span: lit.span(),
                                 suffix,
+                                token: Some(lit),
                             }
                         },
                         _ => {
                             return Err(ParseError::new(
-                                ParseErrorKind::UnknownLiteral(literal),
                                 lit.span(),
+                                ParseErrorKind::UnknownLiteral(literal),
                             ))
                         },
                     },
@@ -166,6 +312,7 @@ impl Token {
                             value,
                             span: lit.span(),
                             suffix,
+                            token: Some(lit),
                         }
                     },
                     b'0'..=b'9' | b'-' => {
@@ -175,6 +322,7 @@ impl Token {
                                 value,
                                 span: lit.span(),
                                 suffix,
+                                token: Some(lit),
                             }
                         } else {
                             let (value, suffix) = parse_lit_int(&literal)?;
@@ -183,28 +331,26 @@ impl Token {
                                 value,
                                 span: lit.span(),
                                 suffix,
+                                token: Some(lit),
                             }
                         }
                     },
                     _ => {
                         return Err(ParseError::new(
-                            ParseErrorKind::UnknownLiteral(literal),
                             lit.span(),
+                            ParseErrorKind::UnknownLiteral(literal),
                         ))
                     },
                 }
             },
-            TokenTree::Punct(punct) => {
-                queue.push_front(TokenTree::Punct(punct));
+            punct @ TokenTree::Punct(_) => {
+                queue.push_front(punct);
                 let mut punct = String::new();
                 let mut span: Option<Span> = None;
                 loop {
                     let token = queue.pop_front();
                     if let Some(TokenTree::Punct(p)) = &token {
                         punct.push_str(&p.to_string());
-                        if let Spacing::Alone = p.spacing() {
-                            break;
-                        }
                         if let Some(s) = span {
                             let new = s.join(p.span());
                             if let Some(new) = new {
@@ -215,8 +361,10 @@ impl Token {
                         } else {
                             span = Some(p.span());
                         }
-                    }
-                    if let Some(token) = token {
+                        if let Spacing::Alone = p.spacing() {
+                            break;
+                        }
+                    } else if let Some(token) = token {
                         queue.push_front(token);
                         break;
                     }
@@ -381,6 +529,89 @@ impl Token {
             Some(value.as_bytes())
         } else {
             None
+        }
+    }
+}
+
+/// Note: Converting a Literal will result in the loss of the suffix and typically also specific information regarding what type it is, the value itself will not be lost (large u128 numbers exceeding 127 bits may lose their last bit though).
+impl ToTokens for Token {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Self::Group {
+                delimiter,
+                stream,
+                span,
+            } => {
+                let mut token = Group::new(delimiter.into(), stream.to_token_stream());
+                token.set_span(*span);
+                tokens.append(token);
+            },
+            Self::Ident { name, span } => {
+                tokens.append(Ident::new(name, *span));
+            },
+            Self::Literal {
+                kind,
+                value,
+                token,
+                span,
+                ..
+            } => match token {
+                Some(lit) => tokens.append(lit.clone()),
+                None => match kind {
+                    LiteralKind::Byte => {
+                        let mut token = Literal::u8_unsuffixed(value.parse::<u8>().unwrap());
+                        token.set_span(*span);
+                        tokens.append(token);
+                    },
+                    LiteralKind::ByteStr => {
+                        let mut token = Literal::byte_string(value.as_bytes());
+                        token.set_span(*span);
+                        tokens.append(token);
+                    },
+                    LiteralKind::ByteStrRaw(_) => {
+                        let mut token = Literal::byte_string(value.as_bytes());
+                        token.set_span(*span);
+                        tokens.append(token);
+                    },
+                    LiteralKind::Char => {
+                        let mut token = Literal::character(value.parse::<char>().unwrap());
+                        token.set_span(*span);
+                        tokens.append(token);
+                    },
+                    LiteralKind::Float => {
+                        let mut token = Literal::f64_unsuffixed(value.parse::<f64>().unwrap());
+                        token.set_span(*span);
+                        tokens.append(token);
+                    },
+                    LiteralKind::Integer => {
+                        let mut token = Literal::i128_unsuffixed(value.parse::<i128>().unwrap());
+                        token.set_span(*span);
+                        tokens.append(token);
+                    },
+                    LiteralKind::Str => {
+                        let mut token = Literal::string(value);
+                        token.set_span(*span);
+                        tokens.append(token);
+                    },
+                    LiteralKind::StrRaw(_) => {
+                        let mut token = Literal::string(value);
+                        token.set_span(*span);
+                        tokens.append(token);
+                    },
+                },
+            },
+            Self::Punctuation { value, span } => {
+                let max = value.len() - 1;
+                for (index, i) in value.char_indices() {
+                    let mut token = if index == max {
+                        Punct::new(i, Spacing::Alone)
+                    } else {
+                        Punct::new(i, Spacing::Joint)
+                    };
+                    token.set_span(*span);
+                    tokens.append(token);
+                }
+            },
         }
     }
 }
