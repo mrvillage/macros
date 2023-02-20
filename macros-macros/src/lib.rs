@@ -48,7 +48,7 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
                             }
                         } else {
                             quote! {
-                                let mut #ident = vec![];
+                                let mut #ident = macros_utils::Match::None;
                             }
                         }
                     });
@@ -60,11 +60,11 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
                     let struct_fields = raw_params.iter().map(|(ident, optional)| {
                         if *optional {
                             quote! {
-                                pub #ident: Option<Vec<macros_utils::MacroStream>>,
+                                pub #ident: Option<macros_utils::Match>,
                             }
                         } else {
                             quote! {
-                                pub #ident: Vec<macros_utils::MacroStream>,
+                                pub #ident: macros_utils::Match,
                             }
                         }
                     });

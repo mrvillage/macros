@@ -236,10 +236,12 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
         Pattern::Any => {
             quote! {
                 {
-                    let token = stream.pop_or_err()?;
-                    let mut s = macros_utils::MacroStream::new();
-                    s.push_front(token);
-                    Ok(vec![s])
+                    let token = stream.pop_or_err();
+                    if let Err(e) = token {
+                        Err(macros_utils::MacrosError::Parse(e))
+                    } else {
+                        Ok(macros_utils::Match::One(token.unwrap()))
+                    }
                 }
             }
         },
@@ -250,22 +252,24 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
                     .map(|p| pattern_statement(p, params))
                     .map(|statement| {
                         quote! {
-                            let r: Result<Vec<macros_utils::MacroStream>, macros_utils::MacrosError> = #statement;
+                            let r: Result<macros_utils::Match, macros_utils::MacrosError> = #statement;
                             if let Err(r) = r {
                                 break Err(r);
                             }
+                            matches.push(r.unwrap());
                         }
                     });
                 quote! {
-                    let r: Result<Vec<macros_utils::MacroStream>, macros_utils::MacrosError> = loop {
+                    let r: Result<macros_utils::Match, macros_utils::MacrosError> = loop {
+                        let mut matches = vec![];
                         let p = {
                             let mut stream = stream.fork();
                             #(#choice)*
                             stream.popped()
                         };
-                        // stream variable is now the original stream, need to pop off the tokens then
-                        let s = stream.popped_off_fork(p);
-                        break Ok(vec![s]);
+                        // stream variable is now the original stream, need to pop off the tokens
+                        stream.popped_off(p);
+                        break Ok(macros_utils::Match::Many(matches));
                     };
                     if r.is_ok() {
                         break r;
@@ -291,10 +295,11 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
                 .map(|p| pattern_statement(p, params))
                 .map(|statement| {
                     quote! {
-                        let r: Result<Vec<macros_utils::MacroStream>, macros_utils::MacrosError> = #statement;
+                        let r: Result<macros_utils::Match, macros_utils::MacrosError> = #statement;
                         if let Err(r) = r {
                             break Err(r);
                         }
+                        matches.push(r.unwrap());
                     }
                 });
             quote! {
@@ -306,6 +311,7 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
                     let token = token.unwrap();
                     if let macros_utils::Token::Group { delimiter: macros_utils::Delimiter::#delimiter, mut stream, .. } = token {
                         break loop {
+                            let mut matches = vec![];
                             let p = {
                                 let mut stream = stream.fork();
                                 #(#patterns)*
@@ -314,10 +320,10 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
                                 }
                                 stream.popped()
                             };
-                            // stream variable is now the original stream, need to pop off the tokens then
-                            let s = stream.popped_off_fork(p);
-                            break Ok(vec![s]);
-                        };
+                            // stream variable is now the original stream, need to pop off the tokens
+                            stream.popped_off(p);
+                            break Ok(macros_utils::Match::Many(matches));
+                            };
                     } else {
                         break Err(macros_utils::MacrosError::Parse(macros_utils::ParseError::new(token.span(), macros_utils::ParseErrorKind::ExpectedGroup(macros_utils::Delimiter::#delimiter))));
                     }
@@ -330,32 +336,34 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
                 .map(|p| pattern_statement(p, params))
                 .map(|statement| {
                     quote! {
-                        let r: Result<Vec<macros_utils::MacroStream>, macros_utils::MacrosError> = #statement;
+                        let r: Result<macros_utils::Match, macros_utils::MacrosError> = #statement;
                         if let Err(r) = r {
                             break Err(r);
                         }
+                        m.push(r.unwrap());
                     }
                 });
             quote! {
                 {
                     let mut matches = vec![];
-                    loop {
-                        let _ = loop {
-                            let p = {
-                                let mut stream = stream.fork();
-                                if stream.is_empty() {
-                                    break Ok(());
-                                }
-                                #(#patterns)*
-                                stream.popped()
-                            };
-                            // stream variable is now the original stream, need to pop off the tokens then
-                            matches.push(stream.popped_off_fork(p));
+                    let _ = loop {
+                        let mut m = vec![];
+                        let p = {
+                            let mut stream = stream.fork();
+                            if stream.is_empty() {
+                                break Ok(());
+                            }
+                            #(#patterns)*
+                            stream.popped()
                         };
-                        if matches.is_empty() {
-                            break Err(macros_utils::MacrosError::Parse(macros_utils::ParseError::new(stream.peek().map(|t| t.span()).unwrap_or_else(macros_utils::call_site), macros_utils::ParseErrorKind::ExpectedRepetition)));
-                        }
-                        break Ok(matches);
+                        // stream variable is now the original stream, need to pop off the tokens
+                        stream.popped_off(p);
+                        matches.push(macros_utils::Match::Many(m));
+                    };
+                    if matches.is_empty() {
+                        Err(macros_utils::MacrosError::Parse(macros_utils::ParseError::new(stream.peek().map(|t| t.span()).unwrap_or_else(macros_utils::call_site), macros_utils::ParseErrorKind::ExpectedRepetition)))
+                    } else {
+                        Ok(macros_utils::Match::Many(matches))
                     }
                 }
             }
@@ -366,16 +374,18 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
                 .map(|p| pattern_statement(p, params))
                 .map(|statement| {
                     quote! {
-                        let r: Result<Vec<macros_utils::MacroStream>, macros_utils::MacrosError> = #statement;
+                        let r: Result<macros_utils::Match, macros_utils::MacrosError> = #statement;
                         if let Err(r) = r {
                             break Err(r);
                         }
+                        m.push(r.unwrap());
                     }
                 });
             quote! {
                 {
                     let mut matches = vec![];
                     let _ = loop {
+                        let mut m = vec![];
                         let p = {
                             let mut stream = stream.fork();
                             if stream.is_empty() {
@@ -384,10 +394,15 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
                             #(#patterns)*
                             stream.popped()
                         };
-                        // stream variable is now the original stream, need to pop off the tokens then
-                        matches.push(stream.popped_off_fork(p));
+                        // stream variable is now the original stream, need to pop off the tokens
+                        stream.popped_off(p);
+                        matches.push(macros_utils::Match::Many(m));
                     };
-                    Ok(matches)
+                    if matches.is_empty() {
+                        Ok(macros_utils::Match::None)
+                    } else {
+                        Ok(macros_utils::Match::Many(matches))
+                    }
                 }
             }
         },
@@ -397,26 +412,28 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
                 .map(|p| pattern_statement(p, params))
                 .map(|statement| {
                     quote! {
-                        let r: Result<Vec<macros_utils::MacroStream>, macros_utils::MacrosError> = #statement;
+                        let r: Result<macros_utils::Match, macros_utils::MacrosError> = #statement;
                         if let Err(r) = r {
                             break Err(r);
                         }
+                        matches.push(r.unwrap());
                     }
                 });
             quote! {
                 {
-                    let r: Result<Vec<macros_utils::MacroStream>, macros_utils::MacrosError> = loop {
+                    let r: Result<macros_utils::Match, macros_utils::MacrosError> = loop {
+                        let mut matches = vec![];
                         let p = {
                             let mut stream = stream.fork();
                             #(#patterns)*
                             stream.popped()
                         };
-                        // stream variable is now the original stream, need to pop off the tokens then
-                        let s = stream.popped_off_fork(p);
-                        break Ok(vec![s]);
+                        // stream variable is now the original stream, need to pop off the tokens
+                        stream.popped_off(p);
+                        break Ok(macros_utils::Match::Many(matches));
                     };
                     if r.is_err() {
-                        Ok(vec![])
+                        Ok(macros_utils::Match::None)
                     } else {
                         Ok(r.unwrap())
                     }
@@ -429,10 +446,11 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
                 .map(|p| pattern_statement(p, params))
                 .map(|statement| {
                     quote! {
-                        let r: Result<Vec<macros_utils::MacroStream>, macros_utils::MacrosError> = #statement;
+                        let r: Result<macros_utils::Match, macros_utils::MacrosError> = #statement;
                         if let Err(r) = r {
                             break Err(r);
                         }
+                        matches.push(r.unwrap());
                     }
                 });
             let name = Token::Ident {
@@ -447,18 +465,22 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
             };
             quote! {
                 {
-                    let r: Result<Vec<macros_utils::MacroStream>, macros_utils::MacrosError> = loop {
+                    let r: Result<macros_utils::Match, macros_utils::MacrosError> = loop {
+                        let mut matches = vec![];
                         let p = {
                             let mut stream = stream.fork();
                             #(#patterns)*
                             stream.popped()
                         };
-                        // stream variable is now the original stream, need to pop off the tokens then
-                        let s = stream.popped_off_fork(p);
-                        break Ok(vec![s]);
+                        // stream variable is now the original stream, need to pop off the tokens
+                        stream.popped_off(p);
+                        break Ok(macros_utils::Match::Many(matches));
                     };
                     if r.is_ok() {
-                        #name = #assign;
+                        if let Ok(macros_utils::Match::None) = r {
+                        } else {
+                            #name = #assign;
+                        }
                     }
                     r
                 }
@@ -475,9 +497,7 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
                     let token = token.unwrap();
                     let t = #token;
                     break if token == t {
-                        let mut s = macros_utils::MacroStream::new();
-                        s.push_front(token);
-                        Ok(vec![s])
+                        Ok(macros_utils::Match::One(token))
                     } else {
                         Err(macros_utils::MacrosError::Parse(macros_utils::ParseError::new(token.span(), macros_utils::ParseErrorKind::Expected(t, token))))
                     };

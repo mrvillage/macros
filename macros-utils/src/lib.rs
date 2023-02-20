@@ -19,6 +19,13 @@ pub struct MacroStream {
 
 pub type ParseResult<T> = std::result::Result<T, ParseError>;
 
+#[derive(Clone, Debug)]
+pub enum Match {
+    One(Token),
+    Many(Vec<Match>),
+    None,
+}
+
 impl MacroStream {
     pub fn new() -> Self {
         Self {
@@ -105,6 +112,12 @@ impl MacroStream {
             popped.push_back(self.pop().unwrap());
         }
         popped
+    }
+
+    pub fn popped_off(&mut self, p: usize) {
+        for _ in 0..p {
+            self.pop().unwrap();
+        }
     }
 }
 
