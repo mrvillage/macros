@@ -2,6 +2,11 @@
 name = "macros-utils"
 version = "0.1.0"
 edition = "2021"
+description = "Utilities for the macros crate."
+license = "MIT"
+repository = "https://github.com/mrvillage/macros"
+documentation = "https://docs.rs/macros"
+readme = "../README.md"
 
 [dependencies]
 proc-macro2 = "1.0"
