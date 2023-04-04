@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "macros",
+    "macros-core",
     "macros-macros",
     "macros-utils",
 ]
