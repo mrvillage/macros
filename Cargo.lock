@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "macros-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "macros-macros",
  "macros-utils",
@@ -14,7 +14,7 @@ dependencies = [
 
 [[package]]
 name = "macros-macros"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "macros-utils",
  "proc-macro-error",
@@ -24,7 +24,7 @@ dependencies = [
 
 [[package]]
 name = "macros-utils"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
