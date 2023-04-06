@@ -160,7 +160,6 @@ impl Parse for Pattern {
                     },
                 }
             },
-            // TODO: fix this one
             Token::Punctuation { value: '~', .. } => {
                 let next = input.pop_or_err().map_err(|mut e| {
                     e.unexpected_end_of_input("started parsing a pattern and found no start");
