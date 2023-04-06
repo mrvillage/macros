@@ -1,4 +1,4 @@
-use macros_utils::{Delimiter, MacroStream, MacrosError, Parse, Token};
+use macros_utils::{Delimiter, MacroStream, MacrosError, Parse, Spacing, Token};
 use proc_macro2::TokenStream;
 use proc_macro_error::{abort, abort_call_site};
 use quote::quote;
@@ -79,19 +79,19 @@ impl Parse for Pattern {
                     },
                     Ok(token) => {
                         let t = match ending {
-                            Some(Token::Punctuation { value, .. }) if value == "?" => {
+                            Some(Token::Punctuation { value: '?', spacing: Spacing::Alone, .. }) => {
                                 stream.push_front(token);
                                 Self::Optional(stream_to_patterns(&mut stream)?)
                             },
-                            Some(Token::Punctuation { value, .. }) if value == "*" => {
+                            Some(Token::Punctuation { value: '*', spacing: Spacing::Alone, .. }) => {
                                 stream.push_front(token);
                                 Self::ZeroOrMore(stream_to_patterns(&mut stream)?)
                             },
-                            Some(Token::Punctuation { value, .. }) if value == "+" => {
+                            Some(Token::Punctuation { value: '+', spacing: Spacing::Alone, .. }) => {
                                 stream.push_front(token);
                                 Self::OneOrMore(stream_to_patterns(&mut stream)?)
                             },
-                            Some(Token::Punctuation { value, .. }) if value == "@" => {
+                            Some(Token::Punctuation { value: '@', spacing: Spacing::Alone, .. }) => {
                                 let mut span = token.span();
                                 stream.push_front(token);
                                 let mut patterns = vec![];
@@ -101,7 +101,7 @@ impl Parse for Pattern {
                                         span = token.span();
                                     }
                                     match token {
-                                        Some(Token::Punctuation { value, .. }) if value == ":" => {
+                                        Some(Token::Punctuation { value: ':', spacing: Spacing::Alone, .. }) => {
                                             stream.pop();
                                             break;
                                         },
@@ -120,14 +120,14 @@ impl Parse for Pattern {
                                     _ => abort!(token.span(), "expected an identifier"),
                                 }
                             },
-                            Some(Token::Punctuation { value, .. }) if value == "&" => {
+                            Some(Token::Punctuation { value: '&', spacing: Spacing::Alone, .. }) => {
                                 stream.push_front(token);
                                 let mut patterns = vec![];
                                 let mut current = vec![];
                                 while !stream.is_empty() {
                                     let token = stream.peek();
                                     match token {
-                                        Some(Token::Punctuation { value, .. }) if value == "|" => {
+                                        Some(Token::Punctuation { value: '|', spacing: Spacing::Alone, .. }) => {
                                             if !current.is_empty() {
                                                 patterns.push(current);
                                                 current = vec![];
@@ -143,7 +143,7 @@ impl Parse for Pattern {
                                 }
                                 Self::Choice(patterns)
                             },
-                            Some(Token::Punctuation { value, .. }) if value == "$" => Self::Any,
+                            Some(Token::Punctuation { value: '$', spacing: Spacing::Alone, .. }) => Self::Any,
                             _ => {
                                 abort!(token.span(), "expected one of ?*+=~@&$ after single braces")
                             },
@@ -152,7 +152,7 @@ impl Parse for Pattern {
                         t
                     },
                     Err(_) => match ending {
-                        Some(Token::Punctuation { value, .. }) if value == "$" => {
+                        Some(Token::Punctuation { value: '$', spacing: Spacing::Alone, .. }) => {
                             input.pop();
                             Self::Any
                         },
@@ -160,20 +160,18 @@ impl Parse for Pattern {
                     },
                 }
             },
-            Token::Punctuation { mut value, span } if value.starts_with('~') => {
-                value.remove(0);
-                if value == "?"
-                    || value == "*"
-                    || value == "+"
-                    || value == "="
-                    || value == "~"
-                    || value == "@"
-                    || value == "&"
-                    || value == "$"
-                {
-                    Self::Token(Token::Punctuation { value, span })
-                } else {
-                    abort!(span, "expected one of ?*+=~@&$ after tilde")
+            // TODO: fix this one
+            Token::Punctuation { value: '~', .. } => {
+                let next = input.pop_or_err().map_err(|mut e| {
+                    e.unexpected_end_of_input("started parsing a pattern and found no start");
+                    e
+                })?;
+                match next {
+                    next @ Token::Punctuation {
+                        value: '?' | '*' | '+' | '=' | '~' | '@' | '&' | '$',
+                        ..
+                    } => Self::Token(next),
+                    _ => abort!(next.span(), "expected one of ?*+=~@&$ after tilde"),
                 }
             },
             Token::Group {

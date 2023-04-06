@@ -108,7 +108,8 @@ pub enum Token {
     /// either a single character for something like `+`
     /// or a longer string for something like `+=` or `+===`
     Punctuation {
-        value: String,
+        value: char,
+        spacing: Spacing,
         span: Span,
     },
 }
@@ -343,36 +344,10 @@ impl Token {
                     },
                 }
             },
-            punct @ TokenTree::Punct(_) => {
-                queue.push_front(punct);
-                let mut punct = String::new();
-                let mut span: Option<Span> = None;
-                loop {
-                    let token = queue.pop_front();
-                    if let Some(TokenTree::Punct(p)) = &token {
-                        punct.push_str(&p.to_string());
-                        if let Some(s) = span {
-                            let new = s.join(p.span());
-                            if let Some(new) = new {
-                                span = Some(new);
-                            } else {
-                                span = Some(p.span());
-                            }
-                        } else {
-                            span = Some(p.span());
-                        }
-                        if let Spacing::Alone = p.spacing() {
-                            break;
-                        }
-                    } else if let Some(token) = token {
-                        queue.push_front(token);
-                        break;
-                    }
-                }
-                Self::Punctuation {
-                    value: punct,
-                    span: span.unwrap_or_else(Span::call_site),
-                }
+            TokenTree::Punct(p) => Self::Punctuation {
+                value: p.as_char(),
+                spacing: p.spacing(),
+                span: p.span(),
             },
         })
     }
@@ -410,7 +385,7 @@ impl Token {
         }
     }
 
-    pub fn punctuation(&self) -> Option<&str> {
+    pub fn punctuation(&self) -> Option<&char> {
         if let Token::Punctuation { value, .. } = self {
             Some(value)
         } else {
@@ -536,7 +511,7 @@ impl Token {
 /// Note: Converting a Literal will result in the loss of the suffix and typically also specific information regarding what type it is, the value itself will not be lost (large u128 numbers exceeding 127 bits may lose their last bit though).
 impl ToTokens for Token {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        match self {
+        tokens.append::<TokenTree>(match self {
             Self::Group {
                 delimiter,
                 stream,
@@ -544,11 +519,9 @@ impl ToTokens for Token {
             } => {
                 let mut token = Group::new(delimiter.into(), stream.to_token_stream());
                 token.set_span(*span);
-                tokens.append(token);
+                token.into()
             },
-            Self::Ident { name, span } => {
-                tokens.append(Ident::new(name, *span));
-            },
+            Self::Ident { name, span } => Ident::new(name, *span).into(),
             Self::Literal {
                 kind,
                 value,
@@ -556,62 +529,35 @@ impl ToTokens for Token {
                 span,
                 ..
             } => match token {
-                Some(lit) => tokens.append(lit.clone()),
-                None => match kind {
-                    LiteralKind::Byte => {
-                        let mut token = Literal::u8_unsuffixed(value.parse::<u8>().unwrap());
-                        token.set_span(*span);
-                        tokens.append(token);
-                    },
-                    LiteralKind::ByteStr => {
-                        let mut token = Literal::byte_string(value.as_bytes());
-                        token.set_span(*span);
-                        tokens.append(token);
-                    },
-                    LiteralKind::ByteStrRaw(_) => {
-                        let mut token = Literal::byte_string(value.as_bytes());
-                        token.set_span(*span);
-                        tokens.append(token);
-                    },
-                    LiteralKind::Char => {
-                        let mut token = Literal::character(value.parse::<char>().unwrap());
-                        token.set_span(*span);
-                        tokens.append(token);
-                    },
-                    LiteralKind::Float => {
-                        let mut token = Literal::f64_unsuffixed(value.parse::<f64>().unwrap());
-                        token.set_span(*span);
-                        tokens.append(token);
-                    },
-                    LiteralKind::Integer => {
-                        let mut token = Literal::i128_unsuffixed(value.parse::<i128>().unwrap());
-                        token.set_span(*span);
-                        tokens.append(token);
-                    },
-                    LiteralKind::Str => {
-                        let mut token = Literal::string(value);
-                        token.set_span(*span);
-                        tokens.append(token);
-                    },
-                    LiteralKind::StrRaw(_) => {
-                        let mut token = Literal::string(value);
-                        token.set_span(*span);
-                        tokens.append(token);
-                    },
-                },
-            },
-            Self::Punctuation { value, span } => {
-                let max = value.len() - 1;
-                for (index, i) in value.char_indices() {
-                    let mut token = if index == max {
-                        Punct::new(i, Spacing::Alone)
-                    } else {
-                        Punct::new(i, Spacing::Joint)
+                Some(lit) => lit.clone().into(),
+                None => {
+                    let mut token = match kind {
+                        LiteralKind::Byte => Literal::u8_unsuffixed(value.parse::<u8>().unwrap()),
+                        LiteralKind::ByteStr => Literal::byte_string(value.as_bytes()),
+                        LiteralKind::ByteStrRaw(_) => Literal::byte_string(value.as_bytes()),
+                        LiteralKind::Char => Literal::character(value.parse::<char>().unwrap()),
+                        LiteralKind::Float => {
+                            Literal::f64_unsuffixed(value.parse::<f64>().unwrap())
+                        },
+                        LiteralKind::Integer => {
+                            Literal::i128_unsuffixed(value.parse::<i128>().unwrap())
+                        },
+                        LiteralKind::Str => Literal::string(value),
+                        LiteralKind::StrRaw(_) => Literal::string(value),
                     };
                     token.set_span(*span);
-                    tokens.append(token);
-                }
+                    token.into()
+                },
             },
-        }
+            Self::Punctuation {
+                value,
+                span,
+                spacing,
+            } => {
+                let mut token = Punct::new(*value, *spacing);
+                token.set_span(*span);
+                token.into()
+            },
+        });
     }
 }

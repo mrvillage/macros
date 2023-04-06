@@ -7,7 +7,8 @@ use std::collections::VecDeque;
 
 pub use error::{MacrosError, ParseError, ParseErrorKind, ToMacrosError};
 pub use parse::Parse;
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
+pub use proc_macro2::{Spacing, Span};
 use quote::ToTokens;
 pub use tokens::{Delimiter, Token};
 

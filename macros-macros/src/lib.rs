@@ -1,6 +1,6 @@
 mod pattern;
 
-use macros_utils::{MacroStream, Parse, Token};
+use macros_utils::{MacroStream, Parse, Spacing, Token};
 use pattern::{pattern_statement, ParserInput};
 use proc_macro2::{Span, TokenStream};
 use proc_macro_error::{abort_call_site, proc_macro_error};
@@ -20,8 +20,20 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
     match name {
         Some(Token::Ident { name, .. }) => {
             let next = stream.pop();
-            match next {
-                Some(Token::Punctuation { value, .. }) if value == "=>" => {
+            let next2 = stream.pop();
+            match (next, next2) {
+                (
+                    Some(Token::Punctuation {
+                        value: '=',
+                        spacing: Spacing::Joint,
+                        ..
+                    }),
+                    Some(Token::Punctuation {
+                        value: '>',
+                        spacing: Spacing::Alone,
+                        ..
+                    }),
+                ) => {
                     let input = match ParserInput::parse(&mut stream) {
                         Err(err) => err.into_diagnostic().abort(),
                         Ok(input) => input,
