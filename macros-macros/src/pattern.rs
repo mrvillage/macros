@@ -16,7 +16,8 @@ pub struct ParserInput {
 /// ... indicates a token to match exactly
 /// {{...}} escapes the {} grouping
 /// To escape any of the special endings, use ~whatever before the ending, to escape the tilde use ~~
-/// {}$ indicates an arbitrary token, if used in a zero or more or one or more then it will consume the remainder of the stream
+/// {}$ indicates an arbitrary token, if used in a zero or more or one or more then it will consume the stream until the next pattern matches (non-greedy)
+/// {}$$ indicates an arbitrary token, if used in a zero or more or one or more then it will consume the remainder of the stream (greedy)
 #[derive(Debug)]
 pub enum Pattern {
     Optional(Vec<Pattern>),
@@ -26,7 +27,7 @@ pub enum Pattern {
     Choice(Vec<Vec<Pattern>>),
     Token(Token),
     Group(Delimiter, Vec<Pattern>),
-    Any,
+    Any(bool),
 }
 
 impl ParserInput {
@@ -143,7 +144,18 @@ impl Parse for Pattern {
                                 }
                                 Self::Choice(patterns)
                             },
-                            Some(Token::Punctuation { value: '$', spacing: Spacing::Alone, .. }) => Self::Any,
+                            Some(Token::Punctuation { value: '$', spacing: Spacing::Alone, .. }) => {
+                                Self::Any(false)
+                            },
+                            Some(Token::Punctuation { value: '$', spacing: Spacing::Joint, .. }) => {
+                                Self::Any(match input.peek_at(1) {
+                                    Some(Token::Punctuation { value: '$', spacing: Spacing::Alone, .. }) => {
+                                        input.pop(); // pops the previous token off so that this one is popped off at the end of the match
+                                        true
+                                    },
+                                    _ => false
+                                })
+                            },
                             _ => {
                                 abort!(token.span(), "expected one of ?*+=~@&$ after single braces")
                             },
@@ -154,9 +166,19 @@ impl Parse for Pattern {
                     Err(_) => match ending {
                         Some(Token::Punctuation { value: '$', spacing: Spacing::Alone, .. }) => {
                             input.pop();
-                            Self::Any
+                            Self::Any(false)
                         },
-                        _ => abort_call_site!( "found empty group, expected either an any pattern (like {}$) after the braces or something in the braces"),
+                        Some(Token::Punctuation { value: '$', spacing: Spacing::Joint, .. }) => {
+                            input.pop();
+                            Self::Any(match input.peek_at(1) {
+                                Some(Token::Punctuation { value: '$', spacing: Spacing::Alone, .. }) => {
+                                    input.pop();
+                                    true
+                                },
+                                _ => false
+                            })
+                        },
+                        _ => abort_call_site!("found empty group, expected either an any pattern (like {}$) after the braces or something in the braces"),
                     },
                 }
             },
@@ -230,7 +252,8 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
     // should assume it has a stream variable that it is MEANT to modify and pop values off of on either success or failure
     // the caller is responsible for ensuring that, on error, the stream is returned to the state it was in before the pattern was attempted (should only happen in the case of Optional which will fork the stream and deal with it itself)
     match pattern {
-        Pattern::Any => {
+        // TODO: reimplement this and make it work with non-greedy matching as
+        Pattern::Any(_) => {
             quote! {
                 {
                     let token = stream.pop_or_err();

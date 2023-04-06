@@ -56,7 +56,11 @@ impl MacroStream {
     }
 
     pub fn peek(&self) -> Option<&Token> {
-        self.stream.front()
+        self.peek_at(0)
+    }
+
+    pub fn peek_at(&self, i: usize) -> Option<&Token> {
+        self.stream.get(i)
     }
 
     pub fn parse<T>(&mut self) -> Result<T, MacrosError>
