@@ -18,6 +18,7 @@ pub struct ParserInput {
 /// To escape any of the special endings, use ~whatever before the ending, to escape the tilde use ~~
 /// {}$ indicates an arbitrary token, if used in a zero or more or one or more then it will consume the stream until the next pattern matches (non-greedy)
 /// {}$$ indicates an arbitrary token, if used in a zero or more or one or more then it will consume the remainder of the stream (greedy)
+/// {...}= indicates a validation function, should be anything of type type `Fn(&DataStruct, &Vec<Token>) -> Result<(), String>` as it will be interpolated directly into the code expecting that type
 #[derive(Debug)]
 pub enum Pattern {
     Optional(Vec<Pattern>),
@@ -28,6 +29,7 @@ pub enum Pattern {
     Token(Token),
     Group(Delimiter, Vec<Pattern>),
     Any(bool),
+    Validator(MacroStream),
 }
 
 impl ParserInput {
@@ -155,6 +157,10 @@ impl Parse for Pattern {
                                     },
                                     _ => false
                                 })
+                            },
+                            Some(Token::Punctuation { value: '=', spacing: Spacing::Alone, .. }) => {
+                                stream.push_front(token);
+                                Self::Validator(stream)
                             },
                             _ => {
                                 abort!(token.span(), "expected one of ?*+=~@&$ after single braces")
@@ -524,5 +530,6 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
                 }
             }
         },
+        _ => quote! { Ok(macros_utils::Match::None) },
     }
 }

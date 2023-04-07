@@ -56,17 +56,12 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
                     let var_params = raw_params.iter().map(|(ident, optional)| {
                         if *optional {
                             quote! {
-                                let mut #ident = None;
+                                #ident: None,
                             }
                         } else {
                             quote! {
-                                let mut #ident = macros_utils::Match::None;
+                                #ident: macros_utils::Match::None,
                             }
-                        }
-                    });
-                    let return_params = raw_params.iter().map(|(ident, _)| {
-                        quote! {
-                            #ident,
                         }
                     });
                     let struct_fields = raw_params.iter().map(|(ident, optional)| {
@@ -95,7 +90,9 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
                         #[allow(clippy::never_loop)]
                         impl macros_utils::Parse for #struct_name {
                             fn parse(stream: &mut macros_utils::MacroStream) -> Result<Self, macros_utils::MacrosError> {
-                                #(#var_params)*
+                                let mut self = Self {
+                                    #(#var_params)*
+                                };
                                 // declare variables for each parameter at the top, if variable is optional it will default to None, otherwise be uninitialized
                                 // variables can either be Option<MacroStream> or MacroStream
 
@@ -105,9 +102,7 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
                                 // have a match statement for each pattern, if it matches then assign and keep going, if not then error/abort
                                 // the match statement (can make it a generic variable above using quote) will return a Result, if it's an error then it will be unwrapped and returned from the function
                                 #(#patterns)*
-                                Ok(Self {
-                                    #(#return_params)*
-                                })
+                                Ok(self)
                             }
                         }
                     }
