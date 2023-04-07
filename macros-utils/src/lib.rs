@@ -148,6 +148,7 @@ impl ToTokens for MacroStream {
     }
 }
 
+#[inline(always)]
 pub fn call_site() -> Span {
     Span::call_site()
 }
