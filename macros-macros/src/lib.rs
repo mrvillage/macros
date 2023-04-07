@@ -1,7 +1,4 @@
-mod pattern;
-
-use macros_utils::{MacroStream, Parse, Spacing, Token};
-use pattern::{pattern_statement, ParserInput};
+use macros_utils::{pattern_statement, MacroStream, Parse, ParserInput, Spacing, Token};
 use proc_macro2::{Span, TokenStream};
 use proc_macro_error::{abort_call_site, proc_macro_error};
 use quote::quote;

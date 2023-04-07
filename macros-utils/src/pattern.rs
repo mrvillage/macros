@@ -1,4 +1,4 @@
-use macros_utils::{Delimiter, MacroStream, MacrosError, Parse, Spacing, Token};
+use crate::{call_site, Delimiter, MacroStream, MacrosError, Parse, Spacing, Token};
 use proc_macro2::TokenStream;
 use proc_macro_error::{abort, abort_call_site};
 use quote::quote;
@@ -311,10 +311,10 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
         },
         Pattern::Group(delimiter, patterns) => {
             let delimiter = match delimiter {
-                macros_utils::Delimiter::Parenthesis => quote! { Parenthesis },
-                macros_utils::Delimiter::Brace => quote! { Brace },
-                macros_utils::Delimiter::Bracket => quote! { Bracket },
-                macros_utils::Delimiter::None => quote! { None },
+                Delimiter::Parenthesis => quote! { Parenthesis },
+                Delimiter::Brace => quote! { Brace },
+                Delimiter::Bracket => quote! { Bracket },
+                Delimiter::None => quote! { None },
             };
             let patterns = patterns
                 .into_iter()
@@ -481,7 +481,7 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
                 });
             let name = Token::Ident {
                 name,
-                span: macros_utils::call_site(),
+                span: call_site(),
             };
             let optional = params.iter().any(|p| p.0 == name && p.1);
             let assign = if optional {
