@@ -1,7 +1,7 @@
-use crate::{call_site, Delimiter, MacroStream, MacrosError, Parse, Spacing, Token};
+use crate::{call_site, repr::Repr, Delimiter, MacroStream, MacrosError, Parse, Spacing, Token};
 use proc_macro2::TokenStream;
 use proc_macro_error::{abort, abort_call_site};
-use quote::quote;
+use quote::{quote, ToTokens};
 
 #[derive(Debug)]
 pub struct ParserInput {
@@ -533,3 +533,11 @@ pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> Token
         _ => quote! { Ok(macros_utils::Match::None) },
     }
 }
+
+impl ToTokens for Pattern {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        tokens.extend(self.repr().to_token_stream())
+    }
+}
+
+unsafe impl Sync for Pattern {}

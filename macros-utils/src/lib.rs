@@ -2,11 +2,13 @@ mod error;
 mod parse;
 mod parsers;
 mod pattern;
+mod repr;
 mod tokens;
 
 use std::collections::VecDeque;
 
 pub use error::{MacrosError, ParseError, ParseErrorKind, ToMacrosError};
+pub use lazy_static::lazy_static;
 pub use parse::Parse;
 pub use pattern::{pattern_statement, ParserInput, Pattern};
 use proc_macro2::TokenStream;
