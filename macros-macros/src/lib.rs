@@ -1,4 +1,6 @@
-use macros_utils::{pattern_statement, MacroStream, Parse, ParserInput, Spacing, Token};
+use macros_utils::{
+    call_site, MacroStream, Match, Parse, ParserInput, ParserOutput, Repr, Spacing, Token,
+};
 use proc_macro2::{Span, TokenStream};
 use proc_macro_error::{abort_call_site, proc_macro_error};
 use quote::quote;
@@ -9,6 +11,16 @@ pub fn parser(stream: proc_macro::TokenStream) -> proc_macro::TokenStream {
     match MacroStream::from_tokens(stream.into()) {
         Err(err) => err.into_diagnostic().abort(),
         Ok(stream) => parser_impl(stream).into(),
+    }
+}
+
+#[derive(Clone)]
+struct Empty {}
+
+impl ParserOutput for Empty {
+    fn set_match(&mut self, _: &str, _: Match) {}
+    fn name() -> &'static str {
+        "Empty"
     }
 }
 
@@ -31,12 +43,17 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
                         ..
                     }),
                 ) => {
-                    let input = match ParserInput::parse(&mut stream) {
+                    let input = match ParserInput::<Empty>::parse(&mut stream) {
                         Err(err) => err.into_diagnostic().abort(),
                         Ok(input) => input,
                     };
+                    let patterns = &input
+                        .patterns
+                        .iter()
+                        .map(|p| p.repr(&name))
+                        .collect::<Vec<_>>();
                     let struct_name = Token::Ident {
-                        name,
+                        name: name.clone(),
                         span: Span::call_site(),
                     };
                     let raw_params = input
@@ -72,12 +89,10 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
                             }
                         }
                     });
-                    let patterns = input.patterns.into_iter().map(|pattern| {
-                        let statement = pattern_statement(pattern, &raw_params);
-                        quote! {
-                            #statement?;
-                        }
-                    });
+                    let patterns_const = Token::Ident {
+                        name: format!("__{}_PATTERNS", name.to_ascii_uppercase()),
+                        span: call_site(),
+                    };
                     let set_params = raw_params.iter().map(|(ident, _)| {
                         let name = ident.ident().unwrap();
                         quote! {
@@ -90,31 +105,36 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
                             #(#struct_fields)*
                         }
 
+                        macros_utils::lazy_static! {
+                            static ref #patterns_const: Vec<macros_utils::Pattern<#struct_name>> = vec![
+                                #(#patterns)*
+                            ];
+                        }
+
                         #[allow(clippy::never_loop)]
                         impl macros_utils::Parse for #struct_name {
                             fn parse(stream: &mut macros_utils::MacroStream) -> Result<Self, macros_utils::MacrosError> {
-                                let mut self = Self {
+                                let mut o = Self {
                                     #(#var_params)*
                                 };
-                                // declare variables for each parameter at the top, if variable is optional it will default to None, otherwise be uninitialized
-                                // variables can either be Option<MacroStream> or MacroStream
-
-
-                                // each pattern needs to be parsed off the stream, and also able to assign to variables
-
-                                // have a match statement for each pattern, if it matches then assign and keep going, if not then error/abort
-                                // the match statement (can make it a generic variable above using quote) will return a Result, if it's an error then it will be unwrapped and returned from the function
-                                #(#patterns)*
-                                Ok(self)
+                                let (res, o) = macros_utils::Pattern::<#struct_name>::match_patterns(std::borrow::Cow::Owned(o), &#patterns_const, stream);
+                                match res {
+                                    Ok(_) => Ok(o.into_owned()),
+                                    Err(e) => Err(e),
+                                }
                             }
                         }
 
-                        impl macros_utils::SetMatch for #struct_name {
+                        impl macros_utils::ParserOutput for #struct_name {
                             fn set_match(&mut self, name: &str, value: macros_utils::Match) {
                                 match name {
                                     #(#set_params)*
                                     _ => (),
                                 }
+                            }
+
+                            fn name() -> &'static str {
+                                #name
                             }
                         }
                     }

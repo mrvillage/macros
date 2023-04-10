@@ -10,11 +10,12 @@ use std::collections::VecDeque;
 pub use error::{MacrosError, ParseError, ParseErrorKind, ToMacrosError};
 pub use lazy_static::lazy_static;
 pub use parse::Parse;
-pub use pattern::{pattern_statement, ParserInput, Pattern};
+pub use pattern::{ParserInput, Pattern};
 use proc_macro2::TokenStream;
 pub use proc_macro2::{Spacing, Span};
 use quote::ToTokens;
-pub use tokens::{Delimiter, Token};
+pub use repr::Repr;
+pub use tokens::{Delimiter, LiteralKind, Token};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MacroStream {
@@ -155,10 +156,14 @@ pub fn call_site() -> Span {
     Span::call_site()
 }
 
-pub trait SetMatch {
+pub trait ParserOutput {
     fn set_match(&mut self, k: &str, m: Match);
+    fn name() -> &'static str;
 }
 
-impl SetMatch for () {
+impl ParserOutput for () {
     fn set_match(&mut self, _: &str, _: Match) {}
+    fn name() -> &'static str {
+        "()"
+    }
 }

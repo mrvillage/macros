@@ -1,15 +1,16 @@
 use std::borrow::Cow;
 
 use crate::{
-    call_site, repr::Repr, Delimiter, MacroStream, MacrosError, Match, Parse, ParseError,
-    ParseErrorKind, SetMatch, Spacing, Token,
+    call_site, Delimiter, MacroStream, MacrosError, Match, Parse, ParseError, ParseErrorKind,
+    ParserOutput, Spacing, Token,
 };
-use proc_macro2::TokenStream;
 use proc_macro_error::{abort, abort_call_site};
-use quote::{quote, ToTokens};
 
-pub struct ParserInput {
-    pub patterns: Vec<Pattern>,
+pub struct ParserInput<T>
+where
+    T: ToOwned<Owned = T> + ParserOutput,
+{
+    pub patterns: Vec<Pattern<T>>,
 }
 
 /// {...}? indicates optional
@@ -24,9 +25,9 @@ pub struct ParserInput {
 /// To escape any of the special endings, use ~whatever before the ending, to escape the tilde use ~~
 /// {}$ indicates an arbitrary token, if used in a zero or more or one or more then it will consume the stream until the next pattern matches (non-greedy)
 /// {...}= indicates a validation function, should be anything of type type `Fn(&DataStruct, &Vec<Token>) -> Result<(), String>` as it will be interpolated directly into the code expecting that type
-pub enum Pattern<T = ()>
+pub enum Pattern<T>
 where
-    T: ToOwned,
+    T: ToOwned<Owned = T> + ParserOutput,
 {
     Optional(Vec<Pattern<T>>),
     Parameter(Vec<Pattern<T>>, String),
@@ -43,7 +44,10 @@ where
     ),
 }
 
-impl ParserInput {
+impl<T> ParserInput<T>
+where
+    T: ToOwned<Owned = T> + ParserOutput,
+{
     pub fn params(&self) -> Vec<(String, bool)> {
         let mut params = vec![];
         for pattern in &self.patterns {
@@ -53,7 +57,10 @@ impl ParserInput {
     }
 }
 
-impl Parse for ParserInput {
+impl<T> Parse for ParserInput<T>
+where
+    T: ToOwned<Owned = T> + ParserOutput,
+{
     fn parse(stream: &mut MacroStream) -> Result<Self, MacrosError> {
         Ok(Self {
             patterns: stream_to_patterns(stream)?,
@@ -61,7 +68,10 @@ impl Parse for ParserInput {
     }
 }
 
-fn stream_to_patterns(stream: &mut MacroStream) -> Result<Vec<Pattern>, MacrosError> {
+fn stream_to_patterns<T>(stream: &mut MacroStream) -> Result<Vec<Pattern<T>>, MacrosError>
+where
+    T: ToOwned<Owned = T> + ParserOutput,
+{
     let mut patterns = Vec::new();
     let mut prev = None;
     while !stream.is_empty() {
@@ -79,7 +89,10 @@ fn stream_to_patterns(stream: &mut MacroStream) -> Result<Vec<Pattern>, MacrosEr
     Ok(patterns)
 }
 
-impl Parse for Pattern {
+impl<T> Parse for Pattern<T>
+where
+    T: ToOwned<Owned = T> + ParserOutput,
+{
     fn parse(input: &mut MacroStream) -> Result<Self, MacrosError> {
         let token = input.pop_or_err().map_err(|mut e| {
             e.unexpected_end_of_input("started parsing a pattern and found no start");
@@ -236,7 +249,7 @@ impl Parse for Pattern {
 
 impl<T> Pattern<T>
 where
-    T: ToOwned<Owned = T> + SetMatch,
+    T: ToOwned<Owned = T> + ParserOutput,
 {
     pub fn params(&self) -> Vec<(String, bool)> {
         let mut params = vec![];
@@ -481,7 +494,7 @@ where
         }
     }
 
-    fn match_patterns<'b, 'a: 'b>(
+    pub fn match_patterns<'b, 'a: 'b>(
         mut output: Cow<'a, T>,
         patterns: &'b [Pattern<T>],
         stream: &mut MacroStream,
@@ -508,10 +521,4 @@ where
     }
 }
 
-impl ToTokens for Pattern {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        tokens.extend(self.repr().to_token_stream())
-    }
-}
-
-unsafe impl Sync for Pattern {}
+unsafe impl<T> Sync for Pattern<T> where T: ToOwned<Owned = T> + ParserOutput {}
