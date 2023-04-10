@@ -78,6 +78,12 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
                             #statement?;
                         }
                     });
+                    let set_params = raw_params.iter().map(|(ident, _)| {
+                        let name = ident.ident().unwrap();
+                        quote! {
+                            #name => self.#ident = value,
+                        }
+                    });
                     quote! {
                         #[derive(Debug, Clone)]
                         pub struct #struct_name {
@@ -100,6 +106,15 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
                                 // the match statement (can make it a generic variable above using quote) will return a Result, if it's an error then it will be unwrapped and returned from the function
                                 #(#patterns)*
                                 Ok(self)
+                            }
+                        }
+
+                        impl macros_utils::SetMatch for #struct_name {
+                            fn set_match(&mut self, name: &str, value: macros_utils::Match) {
+                                match name {
+                                    #(#set_params)*
+                                    _ => (),
+                                }
                             }
                         }
                     }

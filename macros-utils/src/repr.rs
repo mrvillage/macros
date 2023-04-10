@@ -136,7 +136,7 @@ impl Repr for Spacing {
 impl Repr for Pattern {
     fn repr(&self) -> MacroStream {
         match self {
-            Self::Any(greedy) => quote! { macros_utils::Pattern::Any(#greedy) },
+            Self::Any => quote! { macros_utils::Pattern::Any },
             Self::Choice(patterns) => {
                 let patterns = patterns.repr();
                 quote! {
@@ -150,10 +150,10 @@ impl Repr for Pattern {
                     macros_utils::Pattern::Group(#delimiter, #patterns)
                 }
             },
-            Self::OneOrMore(pattern) => {
+            Self::OneOrMore(pattern, greedy) => {
                 let pattern = pattern.repr();
                 quote! {
-                    macros_utils::Pattern::OneOrMore(#pattern)
+                    macros_utils::Pattern::OneOrMore(#pattern, #greedy)
                 }
             },
             Self::Optional(pattern) => {
@@ -174,12 +174,21 @@ impl Repr for Pattern {
                     macros_utils::Pattern::Token(#token)
                 }
             },
-            Self::Validator(validator) => {
+            Self::Validator(stream, _) => {
+                let func = match stream {
+                    Some(s) => quote! { Some(#s) },
+                    None => quote! { None },
+                };
                 quote! {
-                    macros_utils::Pattern::Validator(#validator)
+                    macros_utils::Pattern::Validator(#stream, #func)
                 }
             },
-            _ => unimplemented!(),
+            Self::ZeroOrMore(pattern, greedy) => {
+                let pattern = pattern.repr();
+                quote! {
+                    macros_utils::Pattern::ZeroOrMore(#pattern, #greedy)
+                }
+            },
         }
         .into()
     }

@@ -108,6 +108,7 @@ impl From<ParseError> for Diagnostic {
     }
 }
 
+#[non_exhaustive]
 #[derive(Debug, Error)]
 pub enum ParseErrorKind {
     #[error("Unknown literal: {0}")]
@@ -148,4 +149,8 @@ pub enum ParseErrorKind {
     InputTooLong,
     #[error("Expected one or more repetitions, but found none")]
     ExpectedRepetition,
+    #[error("Cannot have adjacent validators")]
+    AdjacentValidators,
+    #[error("Validator failed with message: {0}")]
+    ValidatorFailed(String),
 }

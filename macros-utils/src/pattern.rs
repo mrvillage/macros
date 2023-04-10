@@ -1,35 +1,46 @@
-use crate::{call_site, repr::Repr, Delimiter, MacroStream, MacrosError, Parse, Spacing, Token};
+use std::borrow::Cow;
+
+use crate::{
+    call_site, repr::Repr, Delimiter, MacroStream, MacrosError, Match, Parse, ParseError,
+    ParseErrorKind, SetMatch, Spacing, Token,
+};
 use proc_macro2::TokenStream;
 use proc_macro_error::{abort, abort_call_site};
 use quote::{quote, ToTokens};
 
-#[derive(Debug)]
 pub struct ParserInput {
     pub patterns: Vec<Pattern>,
 }
 
 /// {...}? indicates optional
 /// {... :name}@ indicates a parameter
-/// {...}* indicates zero or more
-/// {...}+ indicates one or more
+/// {...}* indicates zero or more (non-greedy), meaning it will consume the stream until the next pattern matches
+/// {...}** indicates zero or more (greedy), meaning it will consume the remainder of the stream
+/// {...}+ indicates one or more (non-greedy), meaning it will consume the stream until the next pattern matches
+/// {...}++ indicates one or more (greedy), meaning it will consume the remainder of the stream
 /// {... | ... | ...}& indicates a choice
 /// ... indicates a token to match exactly
 /// {{...}} escapes the {} grouping
 /// To escape any of the special endings, use ~whatever before the ending, to escape the tilde use ~~
 /// {}$ indicates an arbitrary token, if used in a zero or more or one or more then it will consume the stream until the next pattern matches (non-greedy)
-/// {}$$ indicates an arbitrary token, if used in a zero or more or one or more then it will consume the remainder of the stream (greedy)
 /// {...}= indicates a validation function, should be anything of type type `Fn(&DataStruct, &Vec<Token>) -> Result<(), String>` as it will be interpolated directly into the code expecting that type
-#[derive(Debug)]
-pub enum Pattern {
-    Optional(Vec<Pattern>),
-    Parameter(Vec<Pattern>, String),
-    ZeroOrMore(Vec<Pattern>),
-    OneOrMore(Vec<Pattern>),
-    Choice(Vec<Vec<Pattern>>),
+pub enum Pattern<T = ()>
+where
+    T: ToOwned,
+{
+    Optional(Vec<Pattern<T>>),
+    Parameter(Vec<Pattern<T>>, String),
+    ZeroOrMore(Vec<Pattern<T>>, bool),
+    OneOrMore(Vec<Pattern<T>>, bool),
+    Choice(Vec<Vec<Pattern<T>>>),
     Token(Token),
-    Group(Delimiter, Vec<Pattern>),
-    Any(bool),
-    Validator(MacroStream),
+    Group(Delimiter, Vec<Pattern<T>>),
+    Any,
+    #[allow(clippy::type_complexity)]
+    Validator(
+        Option<MacroStream>,
+        Option<for<'a> fn(Cow<'a, T>, &Match) -> (Result<(), String>, Cow<'a, T>)>,
+    ),
 }
 
 impl ParserInput {
@@ -52,8 +63,18 @@ impl Parse for ParserInput {
 
 fn stream_to_patterns(stream: &mut MacroStream) -> Result<Vec<Pattern>, MacrosError> {
     let mut patterns = Vec::new();
+    let mut prev = None;
     while !stream.is_empty() {
-        patterns.push(Pattern::parse(stream)?);
+        let current = Pattern::parse(stream)?;
+        if let (Some(&Pattern::Validator(_, _)), Pattern::Validator(_, _)) = (prev, &current) {
+            return Err(ParseError::new(
+                stream.peek().map(|t| t.span()).unwrap_or_else(call_site),
+                ParseErrorKind::AdjacentValidators,
+            )
+            .into());
+        }
+        patterns.push(current);
+        prev = Some(patterns.last().unwrap());
     }
     Ok(patterns)
 }
@@ -88,12 +109,33 @@ impl Parse for Pattern {
                             },
                             Some(Token::Punctuation { value: '*', spacing: Spacing::Alone, .. }) => {
                                 stream.push_front(token);
-                                Self::ZeroOrMore(stream_to_patterns(&mut stream)?)
+                                Self::ZeroOrMore(stream_to_patterns(&mut stream)?, false)
                             },
+                            Some(Token::Punctuation { value: '*', spacing: Spacing::Joint, .. }) => {
+                                stream.push_front(token);
+                                Self::ZeroOrMore(stream_to_patterns(&mut stream)?, match input.peek_at(1) {
+                                    Some(Token::Punctuation { value: '*', spacing: Spacing::Alone, .. }) => {
+                                        input.pop(); // pops the previous token off so that this one is popped off at the end of the match
+                                        true
+                                    },
+                                    _ => false
+                                })
+
+                            }
                             Some(Token::Punctuation { value: '+', spacing: Spacing::Alone, .. }) => {
                                 stream.push_front(token);
-                                Self::OneOrMore(stream_to_patterns(&mut stream)?)
+                                Self::OneOrMore(stream_to_patterns(&mut stream)?, false)
                             },
+                            Some(Token::Punctuation { value: '+', spacing: Spacing::Joint, .. }) => {
+                                stream.push_front(token);
+                                Self::OneOrMore(stream_to_patterns(&mut stream)?, match input.peek_at(1) {
+                                    Some(Token::Punctuation { value: '+', spacing: Spacing::Alone, .. }) => {
+                                        input.pop(); // pops the previous token off so that this one is popped off at the end of the match
+                                        true
+                                    },
+                                    _ => false
+                                })
+                            }
                             Some(Token::Punctuation { value: '@', spacing: Spacing::Alone, .. }) => {
                                 let mut span = token.span();
                                 stream.push_front(token);
@@ -147,20 +189,11 @@ impl Parse for Pattern {
                                 Self::Choice(patterns)
                             },
                             Some(Token::Punctuation { value: '$', spacing: Spacing::Alone, .. }) => {
-                                Self::Any(false)
-                            },
-                            Some(Token::Punctuation { value: '$', spacing: Spacing::Joint, .. }) => {
-                                Self::Any(match input.peek_at(1) {
-                                    Some(Token::Punctuation { value: '$', spacing: Spacing::Alone, .. }) => {
-                                        input.pop(); // pops the previous token off so that this one is popped off at the end of the match
-                                        true
-                                    },
-                                    _ => false
-                                })
+                                Self::Any
                             },
                             Some(Token::Punctuation { value: '=', spacing: Spacing::Alone, .. }) => {
                                 stream.push_front(token);
-                                Self::Validator(stream)
+                                Self::Validator(Some(stream), None)
                             },
                             _ => {
                                 abort!(token.span(), "expected one of ?*+=~@&$ after single braces")
@@ -172,17 +205,7 @@ impl Parse for Pattern {
                     Err(_) => match ending {
                         Some(Token::Punctuation { value: '$', spacing: Spacing::Alone, .. }) => {
                             input.pop();
-                            Self::Any(false)
-                        },
-                        Some(Token::Punctuation { value: '$', spacing: Spacing::Joint, .. }) => {
-                            input.pop();
-                            Self::Any(match input.peek_at(1) {
-                                Some(Token::Punctuation { value: '$', spacing: Spacing::Alone, .. }) => {
-                                    input.pop();
-                                    true
-                                },
-                                _ => false
-                            })
+                            Self::Any
                         },
                         _ => abort_call_site!("found empty group, expected either an any pattern (like {}$) after the braces or something in the braces"),
                     },
@@ -211,7 +234,10 @@ impl Parse for Pattern {
     }
 }
 
-impl Pattern {
+impl<T> Pattern<T>
+where
+    T: ToOwned<Owned = T> + SetMatch,
+{
     pub fn params(&self) -> Vec<(String, bool)> {
         let mut params = vec![];
         match self {
@@ -225,12 +251,12 @@ impl Pattern {
                     params.extend(i.params().into_iter().map(|(name, _)| (name, true)));
                 }
             },
-            Self::ZeroOrMore(patterns) => {
+            Self::ZeroOrMore(patterns, _) => {
                 for i in patterns {
                     params.extend(i.params());
                 }
             },
-            Self::OneOrMore(patterns) => {
+            Self::OneOrMore(patterns, _) => {
                 for i in patterns {
                     params.extend(i.params());
                 }
@@ -252,285 +278,233 @@ impl Pattern {
         };
         params
     }
-}
 
-pub fn pattern_statement(pattern: Pattern, params: &Vec<(Token, bool)>) -> TokenStream {
-    // should assume it has a stream variable that it is MEANT to modify and pop values off of on either success or failure
-    // the caller is responsible for ensuring that, on error, the stream is returned to the state it was in before the pattern was attempted (should only happen in the case of Optional which will fork the stream and deal with it itself)
-    match pattern {
-        // TODO: reimplement this and make it work with non-greedy matching as
-        Pattern::Any(_) => {
-            quote! {
+    pub fn match_pattern<'a>(
+        &self,
+        mut output: Cow<'a, T>,
+        next: Option<&Pattern<T>>,
+        next2: Option<&Pattern<T>>,
+        stream: &mut MacroStream,
+    ) -> (Result<Match, MacrosError>, Cow<'a, T>) {
+        let match_next = match next {
+            Some(Pattern::Validator(_, _)) => next2,
+            _ => next,
+        };
+        let res = match self {
+            Self::Any => (
+                stream
+                    .pop_or_err()
+                    .map(Match::One)
+                    .map_err(MacrosError::Parse),
+                output,
+            ),
+            Self::Choice(choices) => {
+                'choice: for choice in choices {
+                    let mut fork = stream.fork();
+                    let (res, o) = Self::match_patterns(output, choice, &mut fork);
+                    if res.is_err() {
+                        output = o;
+                        continue 'choice;
+                    }
+                    stream.popped_off(fork.popped());
+                    return (res, o);
+                }
+                (
+                    Err(MacrosError::Parse(ParseError::new(
+                        stream.peek().map(|t| t.span()).unwrap_or_else(call_site),
+                        ParseErrorKind::NoMatchingChoice,
+                    ))),
+                    output,
+                )
+            },
+            Self::Group(delimiter, patterns) => {
+                let token = match stream.pop_or_err().map_err(MacrosError::Parse) {
+                    Ok(token) => token,
+                    Err(e) => return (Err(e), output),
+                };
+                if let Token::Group {
+                    delimiter: d,
+                    stream: s,
+                    ..
+                } = &token
                 {
-                    let token = stream.pop_or_err();
-                    if let Err(e) = token {
-                        Err(macros_utils::MacrosError::Parse(e))
-                    } else {
-                        Ok(macros_utils::Match::One(token.unwrap()))
-                    }
-                }
-            }
-        },
-        Pattern::Choice(choices) => {
-            let choices = choices.into_iter().map(|choice| {
-                let choice = choice
-                    .into_iter()
-                    .map(|p| pattern_statement(p, params))
-                    .map(|statement| {
-                        quote! {
-                            let r: Result<macros_utils::Match, macros_utils::MacrosError> = #statement;
-                            if let Err(r) = r {
-                                break Err(r);
-                            }
-                            matches.push(r.unwrap());
+                    if d == delimiter {
+                        let mut fork = s.fork();
+                        let (res, o) = Self::match_patterns(output, patterns, &mut fork);
+                        if !fork.is_empty() {
+                            return (
+                                Err(MacrosError::Parse(ParseError::new(
+                                    stream.peek().map(|t| t.span()).unwrap_or_else(call_site),
+                                    ParseErrorKind::InputTooLong,
+                                ))),
+                                o,
+                            );
                         }
-                    });
-                quote! {
-                    let r: Result<macros_utils::Match, macros_utils::MacrosError> = loop {
-                        let mut matches = vec![];
-                        let p = {
-                            let mut stream = stream.fork();
-                            #(#choice)*
-                            stream.popped()
-                        };
-                        // stream variable is now the original stream, need to pop off the tokens
-                        stream.popped_off(p);
-                        break Ok(macros_utils::Match::Many(matches));
-                    };
-                    if r.is_ok() {
-                        break r;
+                        stream.popped_off(fork.popped());
+                        return (res, o);
                     }
                 }
-            });
-            quote! {
+                (
+                    Err(MacrosError::Parse(ParseError::new(
+                        token.span(),
+                        ParseErrorKind::ExpectedGroup(*delimiter),
+                    ))),
+                    output,
+                )
+            },
+            Self::OneOrMore(patterns, greedy) => {
+                let mut matches = vec![];
                 loop {
-                    #(#choices)*
-                    break Err(macros_utils::MacrosError::Parse(macros_utils::ParseError::new(stream.peek().map(|t| t.span()).unwrap_or_else(macros_utils::call_site), macros_utils::ParseErrorKind::NoMatchingChoice)));
-                }
-            }
-        },
-        Pattern::Group(delimiter, patterns) => {
-            let delimiter = match delimiter {
-                Delimiter::Parenthesis => quote! { Parenthesis },
-                Delimiter::Brace => quote! { Brace },
-                Delimiter::Bracket => quote! { Bracket },
-                Delimiter::None => quote! { None },
-            };
-            let patterns = patterns
-                .into_iter()
-                .map(|p| pattern_statement(p, params))
-                .map(|statement| {
-                    quote! {
-                        let r: Result<macros_utils::Match, macros_utils::MacrosError> = #statement;
-                        if let Err(r) = r {
-                            break Err(r);
-                        }
-                        matches.push(r.unwrap());
+                    let mut fork = stream.fork();
+                    match Self::match_patterns(output, patterns, &mut fork) {
+                        (Ok(m), o) => {
+                            stream.popped_off(fork.popped());
+                            matches.push(m);
+                            output = o;
+                        },
+                        (Err(_), o) => {
+                            output = o;
+                            break;
+                        },
                     }
-                });
-            quote! {
-                loop {
-                    let token = stream.pop_or_err();
-                    if let Err(e) = token {
-                        break Err(macros_utils::MacrosError::Parse(e));
-                    }
-                    let token = token.unwrap();
-                    if let macros_utils::Token::Group { delimiter: macros_utils::Delimiter::#delimiter, mut stream, .. } = token {
-                        break loop {
-                            let mut matches = vec![];
-                            let p = {
-                                let mut stream = stream.fork();
-                                #(#patterns)*
-                                if !stream.is_empty() {
-                                    break Err(macros_utils::MacrosError::Parse(macros_utils::ParseError::new(stream.peek().map(|t| t.span()).unwrap_or_else(macros_utils::call_site), macros_utils::ParseErrorKind::InputTooLong)));
-                                }
-                                stream.popped()
-                            };
-                            // stream variable is now the original stream, need to pop off the tokens
-                            stream.popped_off(p);
-                            break Ok(macros_utils::Match::Many(matches));
-                            };
-                    } else {
-                        break Err(macros_utils::MacrosError::Parse(macros_utils::ParseError::new(token.span(), macros_utils::ParseErrorKind::ExpectedGroup(macros_utils::Delimiter::#delimiter))));
-                    }
-                }
-            }
-        },
-        Pattern::OneOrMore(patterns) => {
-            let patterns = patterns
-                .into_iter()
-                .map(|p| pattern_statement(p, params))
-                .map(|statement| {
-                    quote! {
-                        let r: Result<macros_utils::Match, macros_utils::MacrosError> = #statement;
-                        if let Err(r) = r {
-                            break Err(r);
-                        }
-                        m.push(r.unwrap());
-                    }
-                });
-            quote! {
-                {
-                    let mut matches = vec![];
-                    let _ = loop {
-                        let mut m = vec![];
-                        let p = {
-                            let mut stream = stream.fork();
-                            if stream.is_empty() {
-                                break Ok(());
+                    match match_next {
+                        Some(next) if !greedy && !matches.is_empty() => {
+                            match next.match_pattern(output, None, None, &mut fork) {
+                                (Ok(_), o) => {
+                                    output = o;
+                                    break;
+                                },
+                                (_, o) => output = o,
                             }
-                            #(#patterns)*
-                            stream.popped()
-                        };
-                        // stream variable is now the original stream, need to pop off the tokens
-                        stream.popped_off(p);
-                        matches.push(macros_utils::Match::Many(m));
-                    };
+                        },
+                        _ => {},
+                    }
+                }
+                (
                     if matches.is_empty() {
-                        Err(macros_utils::MacrosError::Parse(macros_utils::ParseError::new(stream.peek().map(|t| t.span()).unwrap_or_else(macros_utils::call_site), macros_utils::ParseErrorKind::ExpectedRepetition)))
+                        Err(MacrosError::Parse(ParseError::new(
+                            stream.peek().map(|t| t.span()).unwrap_or_else(call_site),
+                            ParseErrorKind::ExpectedRepetition,
+                        )))
                     } else {
-                        Ok(macros_utils::Match::Many(matches))
-                    }
-                }
-            }
-        },
-        Pattern::ZeroOrMore(patterns) => {
-            let patterns = patterns
-                .into_iter()
-                .map(|p| pattern_statement(p, params))
-                .map(|statement| {
-                    quote! {
-                        let r: Result<macros_utils::Match, macros_utils::MacrosError> = #statement;
-                        if let Err(r) = r {
-                            break Err(r);
-                        }
-                        m.push(r.unwrap());
-                    }
-                });
-            quote! {
-                {
-                    let mut matches = vec![];
-                    let _ = loop {
-                        let mut m = vec![];
-                        let p = {
-                            let mut stream = stream.fork();
-                            if stream.is_empty() {
-                                break Ok(());
-                            }
-                            #(#patterns)*
-                            stream.popped()
-                        };
-                        // stream variable is now the original stream, need to pop off the tokens
-                        stream.popped_off(p);
-                        matches.push(macros_utils::Match::Many(m));
-                    };
-                    if matches.is_empty() {
-                        Ok(macros_utils::Match::None)
-                    } else {
-                        Ok(macros_utils::Match::Many(matches))
-                    }
-                }
-            }
-        },
-        Pattern::Optional(patterns) => {
-            let patterns = patterns
-                .into_iter()
-                .map(|p| pattern_statement(p, params))
-                .map(|statement| {
-                    quote! {
-                        let r: Result<macros_utils::Match, macros_utils::MacrosError> = #statement;
-                        if let Err(r) = r {
-                            break Err(r);
-                        }
-                        matches.push(r.unwrap());
-                    }
-                });
-            quote! {
-                {
-                    let r: Result<macros_utils::Match, macros_utils::MacrosError> = loop {
-                        let mut matches = vec![];
-                        let p = {
-                            let mut stream = stream.fork();
-                            #(#patterns)*
-                            stream.popped()
-                        };
-                        // stream variable is now the original stream, need to pop off the tokens
-                        stream.popped_off(p);
-                        break Ok(macros_utils::Match::Many(matches));
-                    };
-                    if r.is_err() {
-                        Ok(macros_utils::Match::None)
-                    } else {
-                        Ok(r.unwrap())
-                    }
-                }
-            }
-        },
-        Pattern::Parameter(patterns, name) => {
-            let patterns = patterns
-                .into_iter()
-                .map(|p| pattern_statement(p, params))
-                .map(|statement| {
-                    quote! {
-                        let r: Result<macros_utils::Match, macros_utils::MacrosError> = #statement;
-                        if let Err(r) = r {
-                            break Err(r);
-                        }
-                        matches.push(r.unwrap());
-                    }
-                });
-            let name = Token::Ident {
-                name,
-                span: call_site(),
-            };
-            let optional = params.iter().any(|p| p.0 == name && p.1);
-            let assign = if optional {
-                quote! { Some(r.as_ref().unwrap().clone()) }
-            } else {
-                quote! { r.as_ref().unwrap().clone() }
-            };
-            quote! {
-                {
-                    let r: Result<macros_utils::Match, macros_utils::MacrosError> = loop {
-                        let mut matches = vec![];
-                        let p = {
-                            let mut stream = stream.fork();
-                            #(#patterns)*
-                            stream.popped()
-                        };
-                        // stream variable is now the original stream, need to pop off the tokens
-                        stream.popped_off(p);
-                        break Ok(macros_utils::Match::Many(matches));
-                    };
-                    if r.is_ok() {
-                        if let Ok(macros_utils::Match::None) = r {
-                        } else {
-                            #name = #assign;
-                        }
-                    }
-                    r
-                }
-            }
-        },
-        Pattern::Token(token) => {
-            let token = token.to_token_stream();
-            quote! {
+                        Ok(Match::Many(matches))
+                    },
+                    output,
+                )
+            },
+            Self::ZeroOrMore(patterns, greedy) => {
+                let mut matches = vec![];
                 loop {
-                    let token = stream.pop_or_err();
-                    if let Err(e) = token {
-                        break Err(macros_utils::MacrosError::Parse(e));
+                    let mut fork = stream.fork();
+                    match Self::match_patterns(output, patterns, &mut fork) {
+                        (Ok(m), o) => {
+                            stream.popped_off(fork.popped());
+                            matches.push(m);
+                            output = o;
+                        },
+                        (_, o) => {
+                            output = o;
+                            break;
+                        },
                     }
-                    let token = token.unwrap();
-                    let t = #token;
-                    break if token == t {
-                        Ok(macros_utils::Match::One(token))
-                    } else {
-                        Err(macros_utils::MacrosError::Parse(macros_utils::ParseError::new(token.span(), macros_utils::ParseErrorKind::Expected(t, token))))
-                    };
+                    match next {
+                        Some(next) if !greedy => {
+                            match next.match_pattern(output.clone(), None, None, &mut fork) {
+                                (Ok(_), o) => {
+                                    output = o;
+                                    break;
+                                },
+                                (_, o) => output = o,
+                            }
+                        },
+                        _ => {},
+                    }
                 }
+                (
+                    if matches.is_empty() {
+                        Ok(Match::None)
+                    } else {
+                        Ok(Match::Many(matches))
+                    },
+                    output,
+                )
+            },
+            Self::Optional(patterns) => {
+                let mut fork = stream.fork();
+                match Self::match_patterns(output.clone(), patterns, &mut fork) {
+                    r @ (Ok(_), _) => {
+                        stream.popped_off(fork.popped());
+                        r
+                    },
+                    (_, o) => (Ok(Match::None), o),
+                }
+            },
+            Self::Token(token) => (
+                match stream.pop_or_err().map_err(MacrosError::Parse) {
+                    Ok(t) if t == *token => Ok(Match::One(t)),
+                    Ok(t) => Err(MacrosError::Parse(ParseError::new(
+                        t.span(),
+                        ParseErrorKind::Expected(token.clone(), t),
+                    ))),
+                    Err(e) => Err(e),
+                },
+                output,
+            ),
+            Self::Parameter(patterns, name) => {
+                let mut fork = stream.fork();
+                let (res, mut o) = Self::match_patterns(output, patterns, &mut fork);
+                match res {
+                    Ok(m) => {
+                        stream.popped_off(fork.popped());
+                        o.to_mut().set_match(name, m.clone());
+                        (Ok(m), o)
+                    },
+                    Err(e) => (Err(e), o),
+                }
+            },
+            Self::Validator(_, _) => panic!(
+                "Validator pattern should not have been passed into `Pattern::match_pattern`"
+            ),
+        };
+        match (next, res) {
+            (Some(Pattern::Validator(_, Some(f))), (Ok(m), output)) => match f(output, &m) {
+                (Ok(_), o) => (Ok(m), o),
+                (Err(e), o) => (
+                    Err(MacrosError::Parse(ParseError::new(
+                        stream.peek().map(|t| t.span()).unwrap_or_else(call_site),
+                        ParseErrorKind::ValidatorFailed(e),
+                    ))),
+                    o,
+                ),
+            },
+            (_, m) => m,
+        }
+    }
+
+    fn match_patterns<'b, 'a: 'b>(
+        mut output: Cow<'a, T>,
+        patterns: &'b [Pattern<T>],
+        stream: &mut MacroStream,
+    ) -> (Result<Match, MacrosError>, Cow<'a, T>) {
+        let mut matches = vec![];
+        let mut fork = stream.fork();
+        for (i, pattern) in patterns.iter().enumerate() {
+            match pattern.match_pattern(output, patterns.get(i + 1), patterns.get(i + 2), &mut fork)
+            {
+                (Ok(m @ Match::One(_)), o) => {
+                    matches.push(m);
+                    output = o;
+                },
+                (Ok(Match::None), o) => output = o,
+                (Ok(Match::Many(m)), o) => {
+                    matches.extend(m);
+                    output = o;
+                },
+                e => return e,
             }
-        },
-        _ => quote! { Ok(macros_utils::Match::None) },
+        }
+        stream.popped_off(fork.popped());
+        (Ok(Match::Many(matches)), output)
     }
 }
 

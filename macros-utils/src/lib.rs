@@ -154,3 +154,11 @@ impl ToTokens for MacroStream {
 pub fn call_site() -> Span {
     Span::call_site()
 }
+
+pub trait SetMatch {
+    fn set_match(&mut self, k: &str, m: Match);
+}
+
+impl SetMatch for () {
+    fn set_match(&mut self, _: &str, _: Match) {}
+}

@@ -12,7 +12,6 @@ use crate::{
         get_byte_at, parse_lit_byte, parse_lit_byte_str, parse_lit_byte_str_raw, parse_lit_char,
         parse_lit_float, parse_lit_int, parse_lit_str, parse_lit_str_raw,
     },
-    repr::Repr,
     MacroStream, ParseError, ParseErrorKind, ParseResult,
 };
 
