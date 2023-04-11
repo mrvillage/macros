@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use macros_utils::{
     call_site, MacroStream, Match, Parse, ParserInput, ParserOutput, Repr, Spacing, Token,
 };
