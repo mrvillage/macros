@@ -3,7 +3,7 @@ name: post-release
 on:
   push:
     tags:
-    - "v*"
+    - "macros-core-v*"
 
 jobs:
   create-release:
