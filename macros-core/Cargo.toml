@@ -1,6 +1,6 @@
 [package]
 name = "macros-core"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 description = "A simple, lightweight, and highly configurable library for quickly parsing macro input into custom objects."
 license = "MIT"
@@ -10,8 +10,8 @@ readme = "../README.md"
 
 [dependencies]
 quote = "1.0"
-macros-macros = { version = "0.1.2", path = "../macros-macros" }
-macros-utils = { version = "0.1.2", path = "../macros-utils" }
+macros-macros = { version = "0.2.0", path = "../macros-macros" }
+macros-utils = { version = "0.2.0", path = "../macros-utils" }
 
 [dev-dependencies]
 proc-macro2 = "1.0"
