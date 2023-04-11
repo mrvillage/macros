@@ -10,7 +10,7 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "macros-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "macros-macros",
  "macros-utils",
@@ -20,7 +20,7 @@ dependencies = [
 
 [[package]]
 name = "macros-macros"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "macros-utils",
  "proc-macro-error",
@@ -30,7 +30,7 @@ dependencies = [
 
 [[package]]
 name = "macros-utils"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "lazy_static",
  "proc-macro-error",
