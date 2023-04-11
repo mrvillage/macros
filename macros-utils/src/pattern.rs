@@ -6,6 +6,7 @@ use crate::{
 };
 use proc_macro_error::{abort, abort_call_site};
 
+#[doc(hidden)]
 pub struct ParserInput<T>
 where
     T: ToOwned<Owned = T> + ParserOutput,
@@ -13,18 +14,21 @@ where
     pub patterns: Vec<Pattern<T>>,
 }
 
-/// {...}? indicates optional
-/// {... :name}@ indicates a parameter
+/// A pattern to match against a `MacroStream` in a parser from the `parser!` macro.
+///
+/// The following are the various patterns that can be used:
+/// {...}? indicates that the pattern is optional
+/// {... :name}@ indicates that the match should be bound to the parameter `name`
 /// {...}* indicates zero or more (non-greedy), meaning it will consume the stream until the next pattern matches
 /// {...}** indicates zero or more (greedy), meaning it will consume the remainder of the stream
 /// {...}+ indicates one or more (non-greedy), meaning it will consume the stream until the next pattern matches
 /// {...}++ indicates one or more (greedy), meaning it will consume the remainder of the stream
 /// {... | ... | ...}& indicates a choice
 /// ... indicates a token to match exactly
+/// {}$ indicates an arbitrary token, if used in a zero or more or one or more then it will consume the stream until the next pattern matches
+/// {...}= indicates a validation function, should be anything of type type `for<'a> fn(Cow<'a, T>, &Match) -> (Result<(), String>, Cow<'a, T>)` as it will be interpolated directly into the code expecting that type
 /// {{...}} escapes the {} grouping
 /// To escape any of the special endings, use ~whatever before the ending, to escape the tilde use ~~
-/// {}$ indicates an arbitrary token, if used in a zero or more or one or more then it will consume the stream until the next pattern matches (non-greedy)
-/// {...}= indicates a validation function, should be anything of type type `Fn(&DataStruct, &Vec<Token>) -> Result<(), String>` as it will be interpolated directly into the code expecting that type
 pub enum Pattern<T>
 where
     T: ToOwned<Owned = T> + ParserOutput,
@@ -320,7 +324,7 @@ where
                         output = o;
                         continue 'choice;
                     }
-                    stream.popped_off(fork.popped());
+                    stream.pop_many(fork.popped());
                     return (res, o);
                 }
                 (
@@ -354,7 +358,7 @@ where
                                 o,
                             );
                         }
-                        stream.popped_off(fork.popped());
+                        stream.pop_many(fork.popped());
                         return (res, o);
                     }
                 }
@@ -372,7 +376,7 @@ where
                     let mut fork = stream.fork();
                     match Self::match_patterns(output, patterns, &mut fork) {
                         (Ok(m), o) => {
-                            stream.popped_off(fork.popped());
+                            stream.pop_many(fork.popped());
                             matches.push(m);
                             output = o;
                         },
@@ -412,7 +416,7 @@ where
                     let mut fork = stream.fork();
                     match Self::match_patterns(output, patterns, &mut fork) {
                         (Ok(m), o) => {
-                            stream.popped_off(fork.popped());
+                            stream.pop_many(fork.popped());
                             matches.push(m);
                             output = o;
                         },
@@ -447,7 +451,7 @@ where
                 let mut fork = stream.fork();
                 match Self::match_patterns(output.clone(), patterns, &mut fork) {
                     r @ (Ok(_), _) => {
-                        stream.popped_off(fork.popped());
+                        stream.pop_many(fork.popped());
                         r
                     },
                     (_, o) => (Ok(Match::None), o),
@@ -469,7 +473,7 @@ where
                 let (res, mut o) = Self::match_patterns(output, patterns, &mut fork);
                 match res {
                     Ok(m) => {
-                        stream.popped_off(fork.popped());
+                        stream.pop_many(fork.popped());
                         o.to_mut().set_match(name, m.clone());
                         (Ok(m), o)
                     },
@@ -520,7 +524,7 @@ where
                 e => return e,
             }
         }
-        stream.popped_off(fork.popped());
+        stream.pop_many(fork.popped());
         (Ok(Match::Many(matches)), output)
     }
 }

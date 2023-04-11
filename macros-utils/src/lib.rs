@@ -7,7 +7,7 @@ mod tokens;
 
 use std::collections::VecDeque;
 
-pub use error::{MacrosError, ParseError, ParseErrorKind, ToMacrosError};
+pub use error::{MacrosError, ParseError, ParseErrorKind};
 pub use lazy_static::lazy_static;
 pub use parse::Parse;
 pub use pattern::{ParserInput, Pattern};
@@ -17,14 +17,17 @@ use quote::ToTokens;
 pub use repr::Repr;
 pub use tokens::{Delimiter, LiteralKind, Token};
 
+/// A stream of tokens.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MacroStream {
     stream: VecDeque<Token>,
     popped: usize,
 }
 
+/// Type alias for the result of parsing to a `MacroStream`.
 pub type ParseResult<T> = std::result::Result<T, ParseError>;
 
+/// A match of a `Pattern`.
 #[derive(Clone, Debug)]
 pub enum Match {
     One(Token),
@@ -33,6 +36,7 @@ pub enum Match {
 }
 
 impl MacroStream {
+    /// Create a new empty `MacroStream`.
     pub fn new() -> Self {
         Self {
             stream: VecDeque::new(),
@@ -40,10 +44,12 @@ impl MacroStream {
         }
     }
 
+    /// Determine how many tokens have been popped from the stream.
     pub fn popped(&self) -> usize {
         self.popped
     }
 
+    /// Create a `MacroStream` from a `proc_macro2::TokenStream`.
     pub fn from_tokens(stream: TokenStream) -> ParseResult<Self> {
         let mut tokens = VecDeque::new();
         for i in stream.into_iter() {
@@ -56,18 +62,22 @@ impl MacroStream {
         Ok(Self { stream, popped: 0 })
     }
 
+    /// Pop a token from the stream.
     pub fn pop(&mut self) -> Option<Token> {
         self.stream.pop_front()
     }
 
+    /// Peek at the next token in the stream.
     pub fn peek(&self) -> Option<&Token> {
         self.peek_at(0)
     }
 
+    /// Peek at the token at the given index in the stream.
     pub fn peek_at(&self, i: usize) -> Option<&Token> {
         self.stream.get(i)
     }
 
+    /// Parse the stream into a type.
     pub fn parse<T>(&mut self) -> Result<T, MacrosError>
     where
         T: Parse,
@@ -75,10 +85,12 @@ impl MacroStream {
         T::parse(self)
     }
 
+    /// Determine if the stream is empty.
     pub fn is_empty(&self) -> bool {
         self.stream.is_empty()
     }
 
+    /// Pop a token from the stream, or return an error if the stream is empty.
     pub fn pop_or_err(&mut self) -> Result<Token, ParseError> {
         self.pop()
             .ok_or_else(|| {
@@ -90,24 +102,29 @@ impl MacroStream {
             })
     }
 
+    /// Peek at the next token in the stream, or return an error if the stream is empty.
     pub fn peek_or_err(&self) -> Result<&Token, ParseError> {
         self.peek().ok_or_else(|| {
             ParseError::call_site(ParseErrorKind::UnexpectedEndOfInput("".to_string()))
         })
     }
 
+    /// Push a token to the front of the stream.
     pub fn push_front(&mut self, token: Token) {
         self.stream.push_front(token)
     }
 
+    /// Push a token to the back of the stream.
     pub fn push_back(&mut self, token: Token) {
         self.stream.push_back(token)
     }
 
+    /// Get the length of the stream.
     pub fn len(&self) -> usize {
         self.stream.len()
     }
 
+    /// Fork the stream (clone the stream and reset the popped count).
     pub fn fork(&self) -> Self {
         Self {
             stream: self.stream.clone(),
@@ -115,16 +132,8 @@ impl MacroStream {
         }
     }
 
-    pub fn popped_off_fork(&mut self, p: usize) -> Self {
-        let mut popped = Self::new();
-        for _ in 0..p {
-            self.popped += 1;
-            popped.push_back(self.pop().unwrap());
-        }
-        popped
-    }
-
-    pub fn popped_off(&mut self, p: usize) {
+    /// Pop a number of tokens from the stream.
+    pub fn pop_many(&mut self, p: usize) {
         for _ in 0..p {
             self.pop().unwrap();
         }
@@ -151,19 +160,14 @@ impl ToTokens for MacroStream {
     }
 }
 
+/// A shortcut for `proc_macro2::Span::call_site()`.
 #[inline(always)]
 pub fn call_site() -> Span {
     Span::call_site()
 }
 
+/// The trait for the output of a parser created by the `parser!` macro.
 pub trait ParserOutput {
     fn set_match(&mut self, k: &str, m: Match);
     fn name() -> &'static str;
-}
-
-impl ParserOutput for () {
-    fn set_match(&mut self, _: &str, _: Match) {}
-    fn name() -> &'static str {
-        "()"
-    }
 }

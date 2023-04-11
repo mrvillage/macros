@@ -3,6 +3,7 @@ use quote::quote;
 
 use crate::{tokens::LiteralKind, Delimiter, MacroStream, ParserOutput, Pattern, Token};
 
+/// The representation of an item as tokens to recreate it.
 pub trait Repr {
     fn repr(&self, name: &str) -> MacroStream;
 }
@@ -172,7 +173,7 @@ where
             Self::Parameter(pattern, parameter) => {
                 let pattern = pattern.repr(name);
                 quote! {
-                    macros_utils::Pattern::<#type_name>::Parameter(#pattern, #parameter)
+                    macros_utils::Pattern::<#type_name>::Parameter(#pattern, #parameter.into())
                 }
             },
             Self::Token(token) => {

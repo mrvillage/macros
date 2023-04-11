@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use macros_utils::{
     call_site, MacroStream, Match, Parse, ParserInput, ParserOutput, Repr, Spacing, Token,
 };
@@ -5,6 +7,23 @@ use proc_macro2::{Span, TokenStream};
 use proc_macro_error::{abort_call_site, proc_macro_error};
 use quote::quote;
 
+/// Create a parser based on a set of patterns.
+///
+/// See `Pattern` for more information on the available patterns.
+///
+/// # Example
+/// ```rs
+/// use macros_core::parser;
+///
+/// parser! {
+///     NameOfParserAndOutputStruct => {}$ { {}$ : param }@
+/// }
+///
+/// let output: NameOfParserAndOutputStruct = NameOfParserAndOutputStruct::parse(
+///     &mut proc_macro2::TokenStream::from_str("hi hello")
+///         .unwrap()
+///         .into(),
+/// );
 #[proc_macro_error]
 #[proc_macro]
 pub fn parser(stream: proc_macro::TokenStream) -> proc_macro::TokenStream {

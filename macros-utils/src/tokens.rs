@@ -84,6 +84,7 @@ impl From<&proc_macro2::Delimiter> for Delimiter {
     }
 }
 
+/// A token in a macro.
 #[derive(Clone, Debug)]
 pub enum Token {
     Ident {
@@ -160,6 +161,7 @@ impl PartialEq for Token {
 
 impl Eq for Token {}
 
+/// The kind of literal.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LiteralKind {
     Byte,

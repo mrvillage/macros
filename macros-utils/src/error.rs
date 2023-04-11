@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use crate::{Delimiter, Token};
 
+/// The error type for this crate. Can be either a `Parse(ParseError)` from this crate or a `User(Box<dyn Error + Send + Sync>)` user error.
 #[derive(Debug, Error)]
 pub enum MacrosError {
     #[error(transparent)]
@@ -26,25 +27,8 @@ impl From<ParseError> for MacrosError {
     }
 }
 
-pub trait ToMacrosError {
-    fn to_macros_error(self) -> MacrosError;
-    fn to_err<T>(self) -> Result<T, MacrosError>;
-}
-
-impl<S> ToMacrosError for S
-where
-    S: Error + Send + Sync + 'static,
-{
-    fn to_macros_error(self) -> MacrosError {
-        MacrosError::User(Box::new(self))
-    }
-
-    fn to_err<T>(self) -> Result<T, MacrosError> {
-        Err(self.to_macros_error())
-    }
-}
-
 impl MacrosError {
+    /// Convert the error into a `proc_macro_error::Diagnostic`.
     pub fn into_diagnostic(self) -> Diagnostic {
         match self {
             Self::Parse(error) => error.into_diagnostic(),
@@ -52,6 +36,7 @@ impl MacrosError {
         }
     }
 
+    /// Add a message to the error if it is a `Self::Parse` and the error is an `UnexpectedEndOfInput`.
     pub fn unexpected_end_of_input(mut self, msg: &str) -> Self {
         if let Self::Parse(error) = &mut self {
             error.unexpected_end_of_input(msg);
@@ -60,6 +45,7 @@ impl MacrosError {
     }
 }
 
+/// A parse error encountered while parsing a `MacroStream`.
 #[derive(Debug, Error)]
 pub struct ParseError {
     #[source]
@@ -69,6 +55,7 @@ pub struct ParseError {
 }
 
 impl ParseError {
+    /// Create a new parse error with the given span and kind.
     pub fn new(span: Span, error: ParseErrorKind) -> Self {
         Self {
             error,
@@ -77,6 +64,7 @@ impl ParseError {
         }
     }
 
+    /// Create a new parse error with the given kind and the `Span::call_site()` span.
     pub fn call_site(error: ParseErrorKind) -> Self {
         Self {
             error,
@@ -85,10 +73,12 @@ impl ParseError {
         }
     }
 
+    /// Convert the error into a `proc_macro_error::Diagnostic`.
     pub fn into_diagnostic(self) -> Diagnostic {
         Diagnostic::spanned(self.span, self.level, self.error.to_string())
     }
 
+    /// Add a message to the error if it is an `UnexpectedEndOfInput` error.
     pub fn unexpected_end_of_input(&mut self, msg: &str) {
         if let ParseErrorKind::UnexpectedEndOfInput(s) = &mut self.error {
             s.push_str(msg);
@@ -108,6 +98,7 @@ impl From<ParseError> for Diagnostic {
     }
 }
 
+/// The specific kind of parse error encountered.
 #[non_exhaustive]
 #[derive(Debug, Error)]
 pub enum ParseErrorKind {
