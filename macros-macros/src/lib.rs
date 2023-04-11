@@ -107,7 +107,7 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
 
                         macros_utils::lazy_static! {
                             static ref #patterns_const: Vec<macros_utils::Pattern<#struct_name>> = vec![
-                                #(#patterns)*
+                                #(#patterns,)*
                             ];
                         }
 

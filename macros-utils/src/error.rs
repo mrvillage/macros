@@ -149,8 +149,8 @@ pub enum ParseErrorKind {
     InputTooLong,
     #[error("Expected one or more repetitions, but found none")]
     ExpectedRepetition,
-    #[error("Cannot have adjacent validators")]
-    AdjacentValidators,
+    #[error("Validator must have a non-validator pattern preceding it")]
+    InvalidValidatorPosition,
     #[error("Validator failed with message: {0}")]
     ValidatorFailed(String),
 }

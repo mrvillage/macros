@@ -76,10 +76,11 @@ where
     let mut prev = None;
     while !stream.is_empty() {
         let current = Pattern::parse(stream)?;
-        if let (Some(&Pattern::Validator(_, _)), Pattern::Validator(_, _)) = (prev, &current) {
+        if let (Some(&Pattern::Validator(_, _)) | None, Pattern::Validator(_, _)) = (prev, &current)
+        {
             return Err(ParseError::new(
                 stream.peek().map(|t| t.span()).unwrap_or_else(call_site),
-                ParseErrorKind::AdjacentValidators,
+                ParseErrorKind::InvalidValidatorPosition,
             )
             .into());
         }
@@ -420,7 +421,7 @@ where
                             break;
                         },
                     }
-                    match next {
+                    match match_next {
                         Some(next) if !greedy => {
                             match next.match_pattern(output.clone(), None, None, &mut fork) {
                                 (Ok(_), o) => {
@@ -502,6 +503,9 @@ where
         let mut matches = vec![];
         let mut fork = stream.fork();
         for (i, pattern) in patterns.iter().enumerate() {
+            if let Pattern::Validator(_, _) = pattern {
+                continue;
+            }
             match pattern.match_pattern(output, patterns.get(i + 1), patterns.get(i + 2), &mut fork)
             {
                 (Ok(m @ Match::One(_)), o) => {

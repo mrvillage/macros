@@ -183,11 +183,11 @@ where
             },
             Self::Validator(stream, _) => {
                 let func = match stream {
-                    Some(s) => quote! { Some(#s) },
+                    Some(s) => quote! { Some({#s}) },
                     None => quote! { None },
                 };
                 quote! {
-                    macros_utils::Pattern::<#type_name>::Validator(#stream, #func)
+                    macros_utils::Pattern::<#type_name>::Validator(None, #func)
                 }
             },
             Self::ZeroOrMore(pattern, greedy) => {
