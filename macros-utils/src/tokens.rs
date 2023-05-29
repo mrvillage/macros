@@ -31,6 +31,26 @@ pub enum Delimiter {
     None,
 }
 
+impl Delimiter {
+    fn start_char(&self) -> Option<char> {
+        match self {
+            Self::Parenthesis => Some('('),
+            Self::Brace => Some('{'),
+            Self::Bracket => Some('['),
+            Self::None => None,
+        }
+    }
+
+    fn end_char(&self) -> Option<char> {
+        match self {
+            Self::Parenthesis => Some(')'),
+            Self::Brace => Some('}'),
+            Self::Bracket => Some(']'),
+            Self::None => None,
+        }
+    }
+}
+
 impl Display for Delimiter {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -160,6 +180,39 @@ impl PartialEq for Token {
 }
 
 impl Eq for Token {}
+
+impl ToString for Token {
+    fn to_string(&self) -> String {
+        let mut string = String::new();
+        match self {
+            Self::Group {
+                delimiter, stream, ..
+            } => {
+                if let Some(start) = delimiter.start_char() {
+                    string.push(start)
+                }
+                string.push_str(&stream.to_string());
+                if let Some(end) = delimiter.end_char() {
+                    string.push(end)
+                }
+                string
+            },
+            Self::Ident { name, .. } => name.clone(),
+            Self::Literal { value, suffix, .. } => {
+                string.push_str(value);
+                string.push_str(suffix);
+                string
+            },
+            Self::Punctuation { value, spacing, .. } => {
+                string.push(*value);
+                if *spacing == Spacing::Joint {
+                    string.push(' ');
+                }
+                string
+            },
+        }
+    }
+}
 
 /// The kind of literal.
 #[derive(Clone, Debug, Eq, PartialEq)]

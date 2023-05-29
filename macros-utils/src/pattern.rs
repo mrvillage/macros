@@ -1,9 +1,10 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, str::FromStr};
 
 use crate::{
     call_site, Delimiter, MacroStream, MacrosError, Match, Parse, ParseError, ParseErrorKind,
     ParserOutput, Spacing, Token,
 };
+use proc_macro2::TokenStream;
 use proc_macro_error::{abort, abort_call_site};
 
 #[doc(hidden)]
@@ -17,24 +18,25 @@ where
 /// A pattern to match against a `MacroStream` in a parser from the `parser!` macro.
 ///
 /// The following are the various patterns that can be used:
-/// {...}? indicates that the pattern is optional
-/// {... :name}@ indicates that the match should be bound to the parameter `name`
-/// {...}* indicates zero or more (non-greedy), meaning it will consume the stream until the next pattern matches
-/// {...}** indicates zero or more (greedy), meaning it will consume the remainder of the stream
-/// {...}+ indicates one or more (non-greedy), meaning it will consume the stream until the next pattern matches
-/// {...}++ indicates one or more (greedy), meaning it will consume the remainder of the stream
-/// {... | ... | ...}& indicates a choice
-/// ... indicates a token to match exactly
-/// {}$ indicates an arbitrary token, if used in a zero or more or one or more then it will consume the stream until the next pattern matches
-/// {...}= indicates a validation function, should be anything of type type `for<'a> fn(Cow<'a, T>, &Match) -> (Result<(), String>, Cow<'a, T>)` as it will be interpolated directly into the code expecting that type
-/// {{...}} escapes the {} grouping
-/// To escape any of the special endings, use ~whatever before the ending, to escape the tilde use ~~
+/// - {...}? indicates that the pattern is optional
+/// - {... :name:type}@ indicates that the match should be bound to the parameter `name` with the type `type`, the type can be any type that
+/// - {...}* indicates zero or more (non-greedy), meaning it will consume the stream until the next pattern matches
+/// - {...}** indicates zero or more (greedy), meaning it will consume the remainder of the stream
+/// - {...}+ indicates one or more (non-greedy), meaning it will consume the stream until the next pattern matches
+/// - {...}++ indicates one or more (greedy), meaning it will consume the remainder of the stream
+/// - {... | ... | ...}& indicates a choice
+/// - ... indicates a token to match exactly
+/// - {}$ indicates an arbitrary token, if used in a zero or more or one or more then it will consume the stream until the next pattern matches
+/// - {...}= indicates a validation function, should be anything of type type `for<'a> fn(Cow<'a, T>, &Match) -> (Result<(), String>, Cow<'a, T>)` as it will be interpolated directly into the code expecting that type
+/// - {{...}} escapes the {} grouping
+/// - {name}# indicates another parser, where `name` is the name of the parser to use until it completes
+/// - To escape any of the special endings, use ~whatever before the ending, to escape the tilde use ~~
 pub enum Pattern<T>
 where
     T: ToOwned<Owned = T> + ParserOutput,
 {
     Optional(Vec<Pattern<T>>),
-    Parameter(Vec<Pattern<T>>, String),
+    Parameter(Vec<Pattern<T>>, String, MacroStream),
     ZeroOrMore(Vec<Pattern<T>>, bool),
     OneOrMore(Vec<Pattern<T>>, bool),
     Choice(Vec<Vec<Pattern<T>>>),
@@ -52,7 +54,7 @@ impl<T> ParserInput<T>
 where
     T: ToOwned<Owned = T> + ParserOutput,
 {
-    pub fn params(&self) -> Vec<(String, bool)> {
+    pub fn params(&self) -> Vec<(String, bool, MacroStream)> {
         let mut params = vec![];
         for pattern in &self.patterns {
             params.extend(pattern.params());
@@ -179,7 +181,19 @@ where
                                 }
                                 let token = stream.pop_or_err()?;
                                 match token {
-                                    Token::Ident { name, .. } => Self::Parameter(patterns, name),
+                                    Token::Ident { name, .. } => {
+                                        let type_ = match stream.pop() {
+                                            Some(Token::Punctuation { value: ':', spacing: Spacing::Alone, span }) => {
+                                                if stream.is_empty() {
+                                                    abort!(span, "expected a type after the colon, found end of input");
+                                                }
+                                                stream
+                                            },
+                                            Some(_) => abort!(span, "expected a colon after the identifier"),
+                                            None => MacroStream::from_tokens(TokenStream::from_str("macros_utils::Match").unwrap()).unwrap(),
+                                        };
+                                        Self::Parameter(patterns, name, type_)
+                                    },
                                     _ => abort!(token.span(), "expected an identifier"),
                                 }
                             },
@@ -256,7 +270,7 @@ impl<T> Pattern<T>
 where
     T: ToOwned<Owned = T> + ParserOutput,
 {
-    pub fn params(&self) -> Vec<(String, bool)> {
+    pub fn params(&self) -> Vec<(String, bool, MacroStream)> {
         let mut params = vec![];
         match self {
             Self::Group(_, patterns) => {
@@ -266,7 +280,11 @@ where
             },
             Self::Optional(patterns) => {
                 for i in patterns {
-                    params.extend(i.params().into_iter().map(|(name, _)| (name, true)));
+                    params.extend(
+                        i.params()
+                            .into_iter()
+                            .map(|(name, _, type_)| (name, true, type_)),
+                    );
                 }
             },
             Self::ZeroOrMore(patterns, _) => {
@@ -286,11 +304,11 @@ where
                     }
                 }
             },
-            Self::Parameter(patterns, name) => {
+            Self::Parameter(patterns, name, type_) => {
                 for i in patterns {
                     params.extend(i.params());
                 }
-                params.push((name.clone(), false));
+                params.push((name.clone(), false, type_.clone()));
             },
             _ => {},
         };
@@ -468,14 +486,17 @@ where
                 },
                 output,
             ),
-            Self::Parameter(patterns, name) => {
+            Self::Parameter(patterns, name, _) => {
                 let mut fork = stream.fork();
                 let (res, mut o) = Self::match_patterns(output, patterns, &mut fork);
                 match res {
                     Ok(m) => {
                         stream.pop_many(fork.popped());
-                        o.to_mut().set_match(name, m.clone());
-                        (Ok(m), o)
+                        if let Err(e) = o.to_mut().set_match(name, m.clone()) {
+                            (Err(e), o)
+                        } else {
+                            (Ok(m), o)
+                        }
                     },
                     Err(e) => (Err(e), o),
                 }

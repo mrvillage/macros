@@ -35,6 +35,30 @@ pub enum Match {
     None,
 }
 
+impl Default for Match {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+impl From<Match> for MacroStream {
+    fn from(m: Match) -> MacroStream {
+        let mut stream = MacroStream::new();
+        match m {
+            Match::One(i) => {
+                stream.push_back(i);
+            },
+            Match::Many(m) => {
+                for i in m {
+                    stream.append(i.into());
+                }
+            },
+            Match::None => {},
+        }
+        stream
+    }
+}
+
 impl MacroStream {
     /// Create a new empty `MacroStream`.
     pub fn new() -> Self {
@@ -60,6 +84,13 @@ impl MacroStream {
             stream.push_back(Token::from_tokens(&mut tokens)?);
         }
         Ok(Self { stream, popped: 0 })
+    }
+
+    pub fn from_vec(tokens: Vec<Token>) -> Self {
+        Self {
+            stream: tokens.into(),
+            popped: 0,
+        }
     }
 
     /// Pop a token from the stream.
@@ -138,6 +169,10 @@ impl MacroStream {
             self.pop().unwrap();
         }
     }
+
+    pub fn append(&mut self, mut other: Self) {
+        self.stream.append(&mut other.stream)
+    }
 }
 
 impl From<TokenStream> for MacroStream {
@@ -160,6 +195,32 @@ impl ToTokens for MacroStream {
     }
 }
 
+impl ToString for MacroStream {
+    fn to_string(&self) -> String {
+        let mut s = String::new();
+        for i in &self.stream {
+            s.push_str(&i.to_string());
+        }
+        s
+    }
+}
+
+impl<T: Parse> TryFrom<Match> for (T,) {
+    type Error = MacrosError;
+
+    fn try_from(m: Match) -> Result<Self, Self::Error> {
+        T::parse(&mut m.into()).map(|i| (i,))
+    }
+}
+
+impl TryFrom<Match> for (Match,) {
+    type Error = MacrosError;
+
+    fn try_from(m: Match) -> Result<Self, Self::Error> {
+        Ok((m,))
+    }
+}
+
 /// A shortcut for `proc_macro2::Span::call_site()`.
 #[inline(always)]
 pub fn call_site() -> Span {
@@ -168,6 +229,6 @@ pub fn call_site() -> Span {
 
 /// The trait for the output of a parser created by the `parser!` macro.
 pub trait ParserOutput {
-    fn set_match(&mut self, k: &str, m: Match);
+    fn set_match(&mut self, k: &str, m: Match) -> Result<(), MacrosError>;
     fn name() -> &'static str;
 }

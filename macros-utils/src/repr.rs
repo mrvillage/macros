@@ -91,7 +91,7 @@ impl Repr for MacroStream {
     fn repr(&self, name: &str) -> MacroStream {
         let tokens = self.stream.iter().map(|token| token.repr(name));
         quote! {
-            macros_utils::MacroStream::new(vec![
+            macros_utils::MacroStream::from_vec(vec![
                 #(#tokens),*
             ])
         }
@@ -170,10 +170,11 @@ where
                     macros_utils::Pattern::<#type_name>::Optional(#pattern)
                 }
             },
-            Self::Parameter(pattern, parameter) => {
+            Self::Parameter(pattern, parameter, type_) => {
                 let pattern = pattern.repr(name);
+                let type_ = type_.repr(name);
                 quote! {
-                    macros_utils::Pattern::<#type_name>::Parameter(#pattern, #parameter.into())
+                    macros_utils::Pattern::<#type_name>::Parameter(#pattern, #parameter.into(), #type_)
                 }
             },
             Self::Token(token) => {
