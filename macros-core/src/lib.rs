@@ -23,6 +23,6 @@ mod tests {
                 .into(),
         )
         .unwrap();
-        println!("{:?}", output)
+        println!("{:?}", output);
     }
 }
