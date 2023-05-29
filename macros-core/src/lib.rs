@@ -6,7 +6,7 @@ parser! {
 }
 
 parser! {
-    TestParser => {}$ { {}$ : param }@
+    TestParser => {}$ { { {}$ : param : Test }@ }+
 }
 
 #[cfg(test)]
@@ -18,11 +18,11 @@ mod tests {
     #[test]
     fn test_parser() {
         let output: TestParser = TestParser::parse(
-            &mut proc_macro2::TokenStream::from_str("hi hello")
+            &mut proc_macro2::TokenStream::from_str("hi hello hello hello")
                 .unwrap()
                 .into(),
         )
         .unwrap();
-        println!("{:?}", output.param)
+        println!("{:?}", output)
     }
 }

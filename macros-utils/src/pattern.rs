@@ -54,7 +54,7 @@ impl<T> ParserInput<T>
 where
     T: ToOwned<Owned = T> + ParserOutput,
 {
-    pub fn params(&self) -> Vec<(String, bool, MacroStream)> {
+    pub fn params(&self) -> Vec<(String, bool, bool, MacroStream)> {
         let mut params = vec![];
         for pattern in &self.patterns {
             params.extend(pattern.params());
@@ -270,7 +270,7 @@ impl<T> Pattern<T>
 where
     T: ToOwned<Owned = T> + ParserOutput,
 {
-    pub fn params(&self) -> Vec<(String, bool, MacroStream)> {
+    pub fn params(&self) -> Vec<(String, bool, bool, MacroStream)> {
         let mut params = vec![];
         match self {
             Self::Group(_, patterns) => {
@@ -283,18 +283,26 @@ where
                     params.extend(
                         i.params()
                             .into_iter()
-                            .map(|(name, _, type_)| (name, true, type_)),
+                            .map(|(name, _, variadic, type_)| (name, true, variadic, type_)),
                     );
                 }
             },
             Self::ZeroOrMore(patterns, _) => {
                 for i in patterns {
-                    params.extend(i.params());
+                    params.extend(
+                        i.params()
+                            .into_iter()
+                            .map(|(name, optional, _, type_)| (name, optional, true, type_)),
+                    );
                 }
             },
             Self::OneOrMore(patterns, _) => {
                 for i in patterns {
-                    params.extend(i.params());
+                    params.extend(
+                        i.params()
+                            .into_iter()
+                            .map(|(name, optional, _, type_)| (name, optional, true, type_)),
+                    );
                 }
             },
             Self::Choice(patterns) => {
@@ -308,7 +316,7 @@ where
                 for i in patterns {
                     params.extend(i.params());
                 }
-                params.push((name.clone(), false, type_.clone()));
+                params.push((name.clone(), false, false, type_.clone()));
             },
             _ => {},
         };
@@ -342,7 +350,7 @@ where
                         output = o;
                         continue 'choice;
                     }
-                    stream.pop_many(fork.popped());
+                    stream.unfork(fork);
                     return (res, o);
                 }
                 (
@@ -376,7 +384,7 @@ where
                                 o,
                             );
                         }
-                        stream.pop_many(fork.popped());
+                        stream.unfork(fork);
                         return (res, o);
                     }
                 }
@@ -394,7 +402,7 @@ where
                     let mut fork = stream.fork();
                     match Self::match_patterns(output, patterns, &mut fork) {
                         (Ok(m), o) => {
-                            stream.pop_many(fork.popped());
+                            stream.unfork(fork);
                             matches.push(m);
                             output = o;
                         },
@@ -403,6 +411,7 @@ where
                             break;
                         },
                     }
+                    let mut fork = stream.fork();
                     match match_next {
                         Some(next) if !greedy && !matches.is_empty() => {
                             match next.match_pattern(output, None, None, &mut fork) {
@@ -434,7 +443,7 @@ where
                     let mut fork = stream.fork();
                     match Self::match_patterns(output, patterns, &mut fork) {
                         (Ok(m), o) => {
-                            stream.pop_many(fork.popped());
+                            stream.unfork(fork);
                             matches.push(m);
                             output = o;
                         },
@@ -443,6 +452,7 @@ where
                             break;
                         },
                     }
+                    let mut fork = stream.fork();
                     match match_next {
                         Some(next) if !greedy => {
                             match next.match_pattern(output.clone(), None, None, &mut fork) {
@@ -469,7 +479,7 @@ where
                 let mut fork = stream.fork();
                 match Self::match_patterns(output.clone(), patterns, &mut fork) {
                     r @ (Ok(_), _) => {
-                        stream.pop_many(fork.popped());
+                        stream.unfork(fork);
                         r
                     },
                     (_, o) => (Ok(Match::None), o),
@@ -491,7 +501,7 @@ where
                 let (res, mut o) = Self::match_patterns(output, patterns, &mut fork);
                 match res {
                     Ok(m) => {
-                        stream.pop_many(fork.popped());
+                        stream.unfork(fork);
                         if let Err(e) = o.to_mut().set_match(name, m.clone()) {
                             (Err(e), o)
                         } else {
@@ -526,13 +536,11 @@ where
         stream: &mut MacroStream,
     ) -> (Result<Match, MacrosError>, Cow<'a, T>) {
         let mut matches = vec![];
-        let mut fork = stream.fork();
         for (i, pattern) in patterns.iter().enumerate() {
             if let Pattern::Validator(_, _) = pattern {
                 continue;
             }
-            match pattern.match_pattern(output, patterns.get(i + 1), patterns.get(i + 2), &mut fork)
-            {
+            match pattern.match_pattern(output, patterns.get(i + 1), patterns.get(i + 2), stream) {
                 (Ok(m @ Match::One(_)), o) => {
                     matches.push(m);
                     output = o;
@@ -545,7 +553,6 @@ where
                 e => return e,
             }
         }
-        stream.pop_many(fork.popped());
         (Ok(Match::Many(matches)), output)
     }
 }

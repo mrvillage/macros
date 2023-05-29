@@ -95,7 +95,10 @@ impl MacroStream {
 
     /// Pop a token from the stream.
     pub fn pop(&mut self) -> Option<Token> {
-        self.stream.pop_front()
+        self.stream.pop_front().map(|i| {
+            self.popped += 1;
+            i
+        })
     }
 
     /// Peek at the next token in the stream.
@@ -161,6 +164,11 @@ impl MacroStream {
             stream: self.stream.clone(),
             popped: 0,
         }
+    }
+
+    pub fn unfork(&mut self, other: Self) {
+        self.stream = other.stream;
+        self.popped = 0;
     }
 
     /// Pop a number of tokens from the stream.

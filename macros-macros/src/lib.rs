@@ -79,47 +79,54 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
                     let raw_params = input
                         .params()
                         .into_iter()
-                        .map(|(name, optional, type_)| {
+                        .map(|(name, optional, variadic, type_)| {
                             let ident = Token::Ident {
                                 name,
                                 span: Span::call_site(),
                             };
-                            (ident, optional, type_)
+                            (ident, optional, variadic, type_)
                         })
                         .collect::<Vec<_>>();
-                    let var_params = raw_params.iter().map(|(ident, optional, _)| {
-                        if *optional {
-                            quote! {
-                                #ident: None,
+                    let struct_fields =
+                        raw_params.iter().map(|(ident, optional, variadic, type_)| {
+                            if *variadic {
+                                quote! {
+                                    pub #ident: Vec<#type_>,
+                                }
+                            } else if *optional {
+                                quote! {
+                                    pub #ident: Option<#type_>,
+                                }
+                            } else {
+                                quote! {
+                                    pub #ident: #type_,
+                                }
                             }
-                        } else {
-                            quote! {
-                                #ident: macros_utils::Match::None,
-                            }
-                        }
-                    });
-                    let struct_fields = raw_params.iter().map(|(ident, optional, type_)| {
-                        if *optional {
-                            quote! {
-                                pub #ident: Option<#type_>,
-                            }
-                        } else {
-                            quote! {
-                                pub #ident: #type_,
-                            }
-                        }
-                    });
+                        });
                     let patterns_const = Token::Ident {
                         name: format!("__{}_PATTERNS", name.to_ascii_uppercase()),
                         span: call_site(),
                     };
-                    let set_params = raw_params.iter().map(|(ident, _, type_)| {
+                    let set_params = raw_params.iter().map(|(ident, optional, variadic, type_)| {
                         let name = ident.ident().unwrap();
+                        let assign = if *variadic {
+                            quote! {
+                                self.#ident.push(value.0);
+                            }
+                        } else if *optional {
+                            quote! {
+                                self.#ident = Some(value.0);
+                            }
+                        } else {
+                            quote! {
+                                self.#ident = value.0;
+                            }
+                        };
                         quote! {
                             #name => {
                                 match <Match as TryInto<(#type_,)>>::try_into(value) {
                                     Ok(value) => {
-                                        self.#ident = value.0;
+                                        #assign
                                         Ok(())
                                     }
                                     Err(e) => Err(e),
