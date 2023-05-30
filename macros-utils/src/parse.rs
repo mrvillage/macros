@@ -139,3 +139,9 @@ impl Parse for char {
         }
     }
 }
+
+impl Parse for MacroStream {
+    fn parse(input: &mut MacroStream) -> Result<Self, MacrosError> {
+        Ok(input.clone())
+    }
+}
