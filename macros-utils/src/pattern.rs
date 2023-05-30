@@ -19,7 +19,7 @@ where
 ///
 /// The following are the various patterns that can be used:
 /// - {...}? indicates that the pattern is optional
-/// - {... :name:type}@ indicates that the match should be bound to the parameter `name` with the type `type`, the type can be any type that
+/// - {... : name : type}@ indicates that the match should be bound to the parameter `name` with the type `type`, the type can be any type that
 /// - {...}* indicates zero or more (non-greedy), meaning it will consume the stream until the next pattern matches
 /// - {...}** indicates zero or more (greedy), meaning it will consume the remainder of the stream
 /// - {...}+ indicates one or more (non-greedy), meaning it will consume the stream until the next pattern matches
@@ -27,9 +27,8 @@ where
 /// - {... | ... | ...}& indicates a choice
 /// - ... indicates a token to match exactly
 /// - {}$ indicates an arbitrary token, if used in a zero or more or one or more then it will consume the stream until the next pattern matches
-/// - {...}= indicates a validation function, should be anything of type type `for<'a> fn(Cow<'a, T>, &Match) -> (Result<(), String>, Cow<'a, T>)` as it will be interpolated directly into the code expecting that type
+/// - {...}= indicates a validation function, should be anything of type type `for<'a> fn(Cow<'a, T>, &Match) -> (Result<(), String>, Cow<'a, T>)` as it will be interpolated directly into the code expecting that type. Validation functions will receive the current output and the previous match, and should return the new output (allowing modification) and an optional error.
 /// - {{...}} escapes the {} grouping
-/// - {name}# indicates another parser, where `name` is the name of the parser to use until it completes
 /// - To escape any of the special endings, use ~whatever before the ending, to escape the tilde use ~~
 pub enum Pattern<T>
 where
@@ -406,8 +405,11 @@ where
                             matches.push(m);
                             output = o;
                         },
-                        (Err(_), o) => {
+                        (Err(e), o) => {
                             output = o;
+                            if matches.is_empty() {
+                                return (Err(e), output);
+                            }
                             break;
                         },
                     }

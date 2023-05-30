@@ -1,6 +1,6 @@
 use macros_utils::{
-    call_site, MacroStream, MacrosError, Match, Parse, ParserInput, ParserOutput, Repr, Spacing,
-    Token,
+    call_site, Delimiter, MacroStream, MacrosError, Match, Parse, ParserInput, ParserOutput, Repr,
+    Spacing, Token,
 };
 use proc_macro2::{Span, TokenStream};
 use proc_macro_error::{abort_call_site, proc_macro_error};
@@ -48,7 +48,18 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
     let name = stream.pop();
     match name {
         Some(Token::Ident { name, .. }) => {
-            let next = stream.pop();
+            let mut next = stream.pop();
+            let extra_params_stream = if let Some(Token::Group {
+                delimiter: Delimiter::Brace,
+                stream: s,
+                ..
+            }) = next
+            {
+                next = stream.pop();
+                s
+            } else {
+                MacroStream::new()
+            };
             let next2 = stream.pop();
             match (next, next2) {
                 (
@@ -138,6 +149,7 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
                         #[derive(Debug, Default, Clone)]
                         pub struct #struct_name {
                             #(#struct_fields)*
+                            #extra_params_stream
                         }
 
                         macros_utils::lazy_static! {
