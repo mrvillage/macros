@@ -254,9 +254,9 @@ impl Token {
             Self::Group { .. } => quote!(),
             Self::Ident { name, .. } => {
                 quote! {
-                    macros_utils::Token::Ident {
+                    macros_core::Token::Ident {
                         name: #name.to_string(),
-                        span: macros_utils::call_site(),
+                        span: macros_core::call_site(),
                     }
                 }
             },
@@ -268,10 +268,10 @@ impl Token {
             } => {
                 let kind = kind.to_ident();
                 quote! {
-                    macros_utils::Token::Literal {
-                        kind: macros_utils::LiteralKind::#kind,
+                    macros_core::Token::Literal {
+                        kind: macros_core::LiteralKind::#kind,
                         value: #value.to_string(),
-                        span: macros_utils::call_site(),
+                        span: macros_core::call_site(),
                         suffix: #suffix.to_string(),
                         token: None,
                     }
@@ -279,9 +279,9 @@ impl Token {
             },
             Self::Punctuation { value, .. } => {
                 quote! {
-                    macros_utils::Token::Punctuation {
+                    macros_core::Token::Punctuation {
                         value: #value.to_string(),
-                        span: macros_utils::call_site(),
+                        span: macros_core::call_site(),
                     }
                 }
             },
