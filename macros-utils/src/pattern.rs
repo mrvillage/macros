@@ -383,7 +383,6 @@ where
                                 o,
                             );
                         }
-                        stream.unfork(fork);
                         return (res, o);
                     }
                 }
