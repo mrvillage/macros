@@ -9,7 +9,7 @@ use crate::{LiteralKind, MacroStream, MacrosError, ParseError, ParseErrorKind, T
 ///
 /// # Example
 /// ```rs
-/// use macros_utils::{Parse, MacroStream};
+/// use macros_core::{Parse, MacroStream};
 ///
 /// #[derive(Debug, Clone)]
 /// struct MyStruct {

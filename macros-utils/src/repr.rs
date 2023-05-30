@@ -20,7 +20,7 @@ impl Repr for Token {
                 let stream = stream.repr(name);
                 let span = span.repr(name);
                 quote! {
-                    macros_utils::Token::Group {
+                    macros_core::Token::Group {
                         delimiter: #delimiter,
                         stream: #stream,
                         span: #span,
@@ -30,7 +30,7 @@ impl Repr for Token {
             Self::Ident { name: n, span } => {
                 let span = span.repr(name);
                 quote! {
-                    macros_utils::Token::Ident {
+                    macros_core::Token::Ident {
                         name: #n.to_string(),
                         span: #span,
                     }
@@ -46,7 +46,7 @@ impl Repr for Token {
                 let kind = kind.repr(name);
                 let span = span.repr(name);
                 quote! {
-                    macros_utils::Token::Literal {
+                    macros_core::Token::Literal {
                         kind: #kind,
                         value: #value.to_string(),
                         span: #span,
@@ -63,7 +63,7 @@ impl Repr for Token {
                 let spacing = spacing.repr(name);
                 let span = span.repr(name);
                 quote! {
-                    macros_utils::Token::Punctuation {
+                    macros_core::Token::Punctuation {
                         value: #value,
                         spacing: #spacing,
                         span: #span,
@@ -78,10 +78,10 @@ impl Repr for Token {
 impl Repr for Delimiter {
     fn repr(&self, _: &str) -> MacroStream {
         match self {
-            Delimiter::Brace => quote! { macros_utils::Delimiter::Brace },
-            Delimiter::Bracket => quote! { macros_utils::Delimiter::Bracket },
-            Delimiter::Parenthesis => quote! { macros_utils::Delimiter::Parenthesis },
-            Delimiter::None => quote! { macros_utils::Delimiter::None },
+            Delimiter::Brace => quote! { macros_core::Delimiter::Brace },
+            Delimiter::Bracket => quote! { macros_core::Delimiter::Bracket },
+            Delimiter::Parenthesis => quote! { macros_core::Delimiter::Parenthesis },
+            Delimiter::None => quote! { macros_core::Delimiter::None },
         }
         .into()
     }
@@ -91,7 +91,7 @@ impl Repr for MacroStream {
     fn repr(&self, name: &str) -> MacroStream {
         let tokens = self.stream.iter().map(|token| token.repr(name));
         quote! {
-            macros_utils::MacroStream::from_vec(vec![
+            macros_core::MacroStream::from_vec(vec![
                 #(#tokens),*
             ])
         }
@@ -102,7 +102,7 @@ impl Repr for MacroStream {
 impl Repr for Span {
     fn repr(&self, _: &str) -> MacroStream {
         quote! {
-            macros_utils::call_site()
+            macros_core::call_site()
         }
         .into()
     }
@@ -111,14 +111,14 @@ impl Repr for Span {
 impl Repr for LiteralKind {
     fn repr(&self, _: &str) -> MacroStream {
         match self {
-            Self::Byte => quote! { macros_utils::LiteralKind::Byte },
-            Self::Char => quote! { macros_utils::LiteralKind::Char },
-            Self::Float => quote! { macros_utils::LiteralKind::Float },
-            Self::Integer => quote! { macros_utils::LiteralKind::Integer },
-            Self::Str => quote! { macros_utils::LiteralKind::Str },
-            Self::StrRaw(h) => quote! { macros_utils::LiteralKind::StrRaw(#h) },
-            Self::ByteStr => quote! { macros_utils::LiteralKind::ByteStr },
-            Self::ByteStrRaw(h) => quote! { macros_utils::LiteralKind::ByteStrRaw(#h) },
+            Self::Byte => quote! { macros_core::LiteralKind::Byte },
+            Self::Char => quote! { macros_core::LiteralKind::Char },
+            Self::Float => quote! { macros_core::LiteralKind::Float },
+            Self::Integer => quote! { macros_core::LiteralKind::Integer },
+            Self::Str => quote! { macros_core::LiteralKind::Str },
+            Self::StrRaw(h) => quote! { macros_core::LiteralKind::StrRaw(#h) },
+            Self::ByteStr => quote! { macros_core::LiteralKind::ByteStr },
+            Self::ByteStrRaw(h) => quote! { macros_core::LiteralKind::ByteStrRaw(#h) },
         }
         .into()
     }
@@ -127,8 +127,8 @@ impl Repr for LiteralKind {
 impl Repr for Spacing {
     fn repr(&self, _: &str) -> MacroStream {
         match self {
-            Self::Alone => quote! { macros_utils::Spacing::Alone },
-            Self::Joint => quote! { macros_utils::Spacing::Joint },
+            Self::Alone => quote! { macros_core::Spacing::Alone },
+            Self::Joint => quote! { macros_core::Spacing::Joint },
         }
         .into()
     }
@@ -144,43 +144,43 @@ where
             span: Span::call_site(),
         };
         match self {
-            Self::Any => quote! { macros_utils::Pattern::<#type_name>::Any },
+            Self::Any => quote! { macros_core::Pattern::<#type_name>::Any },
             Self::Choice(patterns) => {
                 let patterns = patterns.repr(name);
                 quote! {
-                    macros_utils::Pattern::<#type_name>::Choice(#patterns)
+                    macros_core::Pattern::<#type_name>::Choice(#patterns)
                 }
             },
             Self::Group(delimiter, pattern) => {
                 let delimiter = delimiter.repr(name);
                 let patterns = pattern.repr(name);
                 quote! {
-                    macros_utils::Pattern::<#type_name>::Group(#delimiter, #patterns)
+                    macros_core::Pattern::<#type_name>::Group(#delimiter, #patterns)
                 }
             },
             Self::OneOrMore(pattern, greedy) => {
                 let pattern = pattern.repr(name);
                 quote! {
-                    macros_utils::Pattern::<#type_name>::OneOrMore(#pattern, #greedy)
+                    macros_core::Pattern::<#type_name>::OneOrMore(#pattern, #greedy)
                 }
             },
             Self::Optional(pattern) => {
                 let pattern = pattern.repr(name);
                 quote! {
-                    macros_utils::Pattern::<#type_name>::Optional(#pattern)
+                    macros_core::Pattern::<#type_name>::Optional(#pattern)
                 }
             },
             Self::Parameter(pattern, parameter, type_) => {
                 let pattern = pattern.repr(name);
                 let type_ = type_.repr(name);
                 quote! {
-                    macros_utils::Pattern::<#type_name>::Parameter(#pattern, #parameter.into(), #type_)
+                    macros_core::Pattern::<#type_name>::Parameter(#pattern, #parameter.into(), #type_)
                 }
             },
             Self::Token(token) => {
                 let token = token.repr(name);
                 quote! {
-                    macros_utils::Pattern::<#type_name>::Token(#token)
+                    macros_core::Pattern::<#type_name>::Token(#token)
                 }
             },
             Self::Validator(stream, _) => {
@@ -189,13 +189,13 @@ where
                     None => quote! { None },
                 };
                 quote! {
-                    macros_utils::Pattern::<#type_name>::Validator(None, #func)
+                    macros_core::Pattern::<#type_name>::Validator(None, #func)
                 }
             },
             Self::ZeroOrMore(pattern, greedy) => {
                 let pattern = pattern.repr(name);
                 quote! {
-                    macros_utils::Pattern::<#type_name>::ZeroOrMore(#pattern, #greedy)
+                    macros_core::Pattern::<#type_name>::ZeroOrMore(#pattern, #greedy)
                 }
             },
         }

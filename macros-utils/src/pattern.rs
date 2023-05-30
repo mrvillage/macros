@@ -189,7 +189,7 @@ where
                                                 stream
                                             },
                                             Some(_) => abort!(span, "expected a colon after the identifier"),
-                                            None => MacroStream::from_tokens(TokenStream::from_str("macros_utils::Match").unwrap()).unwrap(),
+                                            None => MacroStream::from_tokens(TokenStream::from_str("macros_core::Match").unwrap()).unwrap(),
                                         };
                                         Self::Parameter(patterns, name, type_)
                                     },

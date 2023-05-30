@@ -152,17 +152,17 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
                             #extra_params_stream
                         }
 
-                        macros_utils::lazy_static! {
-                            static ref #patterns_const: Vec<macros_utils::Pattern<#struct_name>> = vec![
+                        macros_core::lazy_static! {
+                            static ref #patterns_const: Vec<macros_core::Pattern<#struct_name>> = vec![
                                 #(#patterns,)*
                             ];
                         }
 
                         #[allow(clippy::never_loop)]
-                        impl macros_utils::Parse for #struct_name {
-                            fn parse(stream: &mut macros_utils::MacroStream) -> Result<Self, macros_utils::MacrosError> {
+                        impl macros_core::Parse for #struct_name {
+                            fn parse(stream: &mut macros_core::MacroStream) -> Result<Self, macros_core::MacrosError> {
                                 let mut o = Default::default();
-                                let (res, o) = macros_utils::Pattern::<#struct_name>::match_patterns(std::borrow::Cow::Owned(o), &#patterns_const, stream);
+                                let (res, o) = macros_core::Pattern::<#struct_name>::match_patterns(std::borrow::Cow::Owned(o), &#patterns_const, stream);
                                 match res {
                                     Ok(_) => Ok(o.into_owned()),
                                     Err(e) => Err(e),
@@ -170,8 +170,8 @@ fn parser_impl(mut stream: MacroStream) -> TokenStream {
                             }
                         }
 
-                        impl macros_utils::ParserOutput for #struct_name {
-                            fn set_match(&mut self, name: &str, value: macros_utils::Match) -> Result<(), macros_utils::MacrosError> {
+                        impl macros_core::ParserOutput for #struct_name {
+                            fn set_match(&mut self, name: &str, value: macros_core::Match) -> Result<(), macros_core::MacrosError> {
                                 match name {
                                     #(#set_params)*
                                     _ => Ok(()),
