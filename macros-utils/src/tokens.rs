@@ -561,6 +561,10 @@ impl Token {
             None
         }
     }
+
+    pub fn to_parse_error(&self, error: ParseErrorKind) -> ParseError {
+        ParseError::new(self.span(), error)
+    }
 }
 
 /// Note: Converting a Literal will result in the loss of the suffix and typically also specific information regarding what type it is, the value itself will not be lost (large u128 numbers exceeding 127 bits may lose their last bit though).

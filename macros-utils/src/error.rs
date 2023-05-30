@@ -144,4 +144,18 @@ pub enum ParseErrorKind {
     InvalidValidatorPosition,
     #[error("Validator failed with message: {0}")]
     ValidatorFailed(String),
+    #[error("{0}")]
+    User(String),
+}
+
+impl From<String> for ParseErrorKind {
+    fn from(value: String) -> Self {
+        Self::User(value)
+    }
+}
+
+impl From<&str> for ParseErrorKind {
+    fn from(value: &str) -> Self {
+        Self::User(value.to_string())
+    }
 }
