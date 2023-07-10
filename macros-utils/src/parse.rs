@@ -37,6 +37,7 @@ impl Parse for String {
                 value,
                 ..
             } => Ok(value),
+            Token::Ident { name, .. } => Ok(name),
             _ => Err(MacrosError::Parse(ParseError::new(
                 token.span(),
                 ParseErrorKind::User("expected str".into()),
