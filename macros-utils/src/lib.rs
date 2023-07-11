@@ -59,6 +59,15 @@ impl From<Match> for MacroStream {
     }
 }
 
+impl From<Match> for Option<MacroStream> {
+    fn from(value: Match) -> Self {
+        match value {
+            Match::None => None,
+            m => Some(m.into()),
+        }
+    }
+}
+
 impl MacroStream {
     /// Create a new empty `MacroStream`.
     pub fn new() -> Self {
