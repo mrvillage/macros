@@ -307,7 +307,11 @@ where
             Self::Choice(patterns) => {
                 for i in patterns {
                     for j in i {
-                        params.extend(j.params());
+                        params.extend(
+                            j.params()
+                                .into_iter()
+                                .map(|(name, _, variadic, type_)| (name, true, variadic, type_)),
+                        );
                     }
                 }
             },
