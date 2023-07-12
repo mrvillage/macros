@@ -190,6 +190,14 @@ impl MacroStream {
     pub fn append(&mut self, mut other: Self) {
         self.stream.append(&mut other.stream)
     }
+
+    pub fn peek_back(&self) -> Option<&Token> {
+        self.stream.back()
+    }
+
+    pub fn pop_back(&mut self) -> Option<Token> {
+        self.stream.pop_back()
+    }
 }
 
 impl From<TokenStream> for MacroStream {
